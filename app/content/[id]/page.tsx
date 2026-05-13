@@ -5,10 +5,9 @@ import { contentItems, clients, generationRuns, integrations, contentTargets, ty
 import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { ContentEditor } from './editor';
+import { Composer, type ComposerItem } from './composer';
 import { ScheduleCard } from './schedule-card';
 import { MediaPanel } from './media-panel';
-import { VariantsCard } from './variants-card';
 import { listAdapters } from '@/lib/channels/registry';
 
 export const dynamic = 'force-dynamic';
@@ -33,9 +32,6 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
   if (!row) notFound();
   const { item } = row;
 
-  // Channels available for fan-out: every integration that exists for the
-  // client (publishers care about status='connected', but we surface all
-  // so the operator sees what's set up).
   const adapters = listAdapters();
   const labelByChannel = new Map(adapters.map((a) => [a.channel, a.label]));
 
@@ -60,6 +56,25 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
     .innerJoin(integrations, eq(integrations.id, contentTargets.integrationId))
     .where(eq(contentTargets.contentItemId, id));
 
+  const meta = (item.metadata as Record<string, unknown>) ?? {};
+  const variants = ((meta.variants as Record<string, string> | undefined) ?? {});
+
+  const composerItem: ComposerItem = {
+    id: item.id,
+    title: item.title,
+    body: item.body,
+    kind: item.kind,
+    status: item.status as ComposerItem['status'],
+    scheduledFor: item.scheduledFor ? new Date(item.scheduledFor).toISOString() : null,
+    variants,
+  };
+
+  const channelsForComposer = clientIntegrations.map((i) => ({
+    channel: i.channel,
+    label: labelByChannel.get(i.channel as Channel) ?? i.channel,
+    status: i.status,
+  }));
+
   return (
     <Shell>
       <PageHeader
@@ -75,21 +90,9 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
       <Page max="5xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
-            <ContentEditor item={{
-              id: item.id,
-              title: item.title,
-              body: item.body,
-              status: item.status,
-              scheduledFor: item.scheduledFor ? new Date(item.scheduledFor).toISOString() : null,
-            }} />
+            <Composer item={composerItem} channels={channelsForComposer} />
 
             <MediaPanel itemId={item.id} clientId={item.clientId} urls={(item.mediaUrls as string[]) ?? []} />
-
-            <VariantsCard
-              itemId={item.id}
-              baseBody={item.body}
-              variants={((item.metadata as Record<string, unknown>)?.variants as Record<string, string> | undefined) ?? {}}
-            />
 
             <ScheduleCard
               itemId={item.id}
@@ -112,13 +115,14 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
               <div className="px-5 py-4">
                 <MetaList items={[
                   { label: 'Kind',       value: item.kind },
-                  { label: 'Status',     value: item.status },
                   { label: 'Client',     value: row.clientId
                     ? <Link href={`/clients/${row.clientId}`} className="hover:text-accent">{row.clientName ?? '—'}</Link>
                     : '—' },
+                  { label: 'Variants',   value: Object.keys(variants).length === 0
+                    ? <span className="text-faint">none — all channels use canonical</span>
+                    : `${Object.keys(variants).length} channel${Object.keys(variants).length === 1 ? '' : 's'}` },
                   { label: 'Created',    value: new Date(item.createdAt).toLocaleString() },
                   { label: 'Updated',    value: new Date(item.updatedAt).toLocaleString() },
-                  { label: 'Scheduled',  value: item.scheduledFor ? new Date(item.scheduledFor).toLocaleString() : '—' },
                 ]} />
               </div>
             </Card>
@@ -136,11 +140,11 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
               </Card>
             )}
 
-            {item.metadata && Object.keys(item.metadata as object).length > 0 && (
+            {meta && Object.keys(meta).filter((k) => k !== 'variants').length > 0 && (
               <Card className="p-5">
                 <SectionLabel className="mb-2">Metadata</SectionLabel>
                 <pre className="text-[11px] text-muted bg-bg/40 rounded p-3 overflow-x-auto leading-snug">
-                  {JSON.stringify(item.metadata, null, 2)}
+                  {JSON.stringify(Object.fromEntries(Object.entries(meta).filter(([k]) => k !== 'variants')), null, 2)}
                 </pre>
               </Card>
             )}
