@@ -1,11 +1,13 @@
 import { Shell } from '@/components/shell';
 import { Page, PageHeader, Card, CardHeader, Badge, MetaList, SectionLabel } from '@/components/ui';
 import { db } from '@/lib/db';
-import { contentItems, clients, generationRuns } from '@/lib/db/schema';
+import { contentItems, clients, generationRuns, integrations, contentTargets, type Channel } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ContentEditor } from './editor';
+import { ScheduleCard } from './schedule-card';
+import { listAdapters } from '@/lib/channels/registry';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +29,35 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
     .where(eq(contentItems.id, id))
     .limit(1);
   if (!row) notFound();
-
   const { item } = row;
+
+  // Channels available for fan-out: every integration that exists for the
+  // client (publishers care about status='connected', but we surface all
+  // so the operator sees what's set up).
+  const adapters = listAdapters();
+  const labelByChannel = new Map(adapters.map((a) => [a.channel, a.label]));
+
+  const clientIntegrations = await db
+    .select({
+      id: integrations.id, channel: integrations.channel, status: integrations.status,
+    })
+    .from(integrations)
+    .where(eq(integrations.clientId, item.clientId));
+
+  const targets = await db
+    .select({
+      id: contentTargets.id,
+      integrationId: contentTargets.integrationId,
+      status: contentTargets.status,
+      externalUrl: contentTargets.externalUrl,
+      publishedAt: contentTargets.publishedAt,
+      lastError: contentTargets.lastError,
+      channel: integrations.channel,
+    })
+    .from(contentTargets)
+    .innerJoin(integrations, eq(integrations.id, contentTargets.integrationId))
+    .where(eq(contentTargets.contentItemId, id));
+
   return (
     <Shell>
       <PageHeader
@@ -43,7 +72,7 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
       />
       <Page max="5xl">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-4">
             <ContentEditor item={{
               id: item.id,
               title: item.title,
@@ -51,6 +80,20 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
               status: item.status,
               scheduledFor: item.scheduledFor ? new Date(item.scheduledFor).toISOString() : null,
             }} />
+
+            <ScheduleCard
+              itemId={item.id}
+              scheduledFor={item.scheduledFor ? new Date(item.scheduledFor).toISOString() : null}
+              availableIntegrations={clientIntegrations.map((i) => ({
+                id: i.id, channel: i.channel as Channel, status: i.status,
+                channelLabel: labelByChannel.get(i.channel as Channel) ?? i.channel,
+              }))}
+              targets={targets.map((t) => ({
+                id: t.id, integrationId: t.integrationId, status: t.status,
+                externalUrl: t.externalUrl, publishedAt: t.publishedAt?.toISOString() ?? null,
+                lastError: t.lastError, channelLabel: labelByChannel.get(t.channel as Channel) ?? t.channel,
+              }))}
+            />
           </div>
 
           <div className="space-y-4">
