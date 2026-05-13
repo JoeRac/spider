@@ -1,31 +1,54 @@
 import { Shell } from '@/components/shell';
-import { Page, PageHeader, Card, CardHeader, Badge, Dot, MetaList, SectionLabel, LinkButton } from '@/components/ui';
+import { Page, PageHeader, Card, CardHeader, Badge, Dot, MetaList, SectionLabel } from '@/components/ui';
 import { db } from '@/lib/db';
 import { clients, integrations, CHANNELS, type Channel } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
-import { MapPin, Globe, Phone, Mail, Plug } from 'lucide-react';
+import { MapPin, Globe, Phone, Mail } from 'lucide-react';
+import { listAdapters } from '@/lib/channels/registry';
+import { ChannelCard, type ChannelCardData } from './channel-card';
+import { WebsiteBlogForm } from './website-blog-form';
+import { Banner } from './banner';
 
 export const dynamic = 'force-dynamic';
 
-const CHANNEL_LABELS: Record<Channel, string> = {
-  google_my_business: 'Google My Business',
-  facebook: 'Facebook',
-  twitter: 'Twitter / X',
-  youtube: 'YouTube',
-  instagram: 'Instagram',
-  linkedin: 'LinkedIn',
-  tiktok: 'TikTok',
-  website_blog: 'Website blog',
-};
-
-export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientDetailPage({ params, searchParams }: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
 
   const existing = await db.select().from(integrations).where(eq(integrations.clientId, id));
   const byChannel = new Map(existing.map((i) => [i.channel, i]));
+
+  const adapters = listAdapters();
+  const cards: ChannelCardData[] = CHANNELS.map((channel) => {
+    const adapter = adapters.find((a) => a.channel === channel)!;
+    const row = byChannel.get(channel);
+    return {
+      channel,
+      label: adapter.label,
+      kind: adapter.kind,
+      configured: adapter.isConfigured(),
+      supportsRefresh: typeof adapter.refresh === 'function',
+      integration: row ? {
+        id: row.id,
+        status: row.status,
+        lastSyncAt: row.lastSyncAt ? new Date(row.lastSyncAt).toISOString() : null,
+        lastError: row.lastError,
+        externalIds: row.externalIds as Record<string, string>,
+      } : null,
+    };
+  });
+
+  const websiteBlogIntegration = existing.find((i) => i.channel === 'website_blog');
+  const websiteBlogMode = ((websiteBlogIntegration?.externalIds as Record<string, string> | undefined)?.webhook_url) ? 'webhook' : 'wordpress';
+
+  const integrationError = typeof sp.integration_error === 'string' ? sp.integration_error : null;
+  const integrationConnected = typeof sp.integration_connected === 'string' ? sp.integration_connected : null;
 
   return (
     <Shell>
@@ -36,6 +59,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         actions={<Badge tone={client.status === 'active' ? 'ok' : 'info'}><Dot tone={client.status === 'active' ? 'ok' : 'info'} />{client.status}</Badge>}
       />
       <Page>
+        {(integrationError || integrationConnected) && (
+          <Banner tone={integrationError ? 'err' : 'ok'} message={integrationError ?? `${integrationConnected} connected`} />
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-1">
             <CardHeader title="Profile" subtitle="Imported from Badger" />
@@ -56,36 +83,16 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           </Card>
 
           <Card className="lg:col-span-2">
-            <CardHeader
-              title="Channels"
-              subtitle="Connect each surface to start fanning out generated content. OAuth flows ship in phase 2."
-              action={<LinkButton href="/integrations" size="sm" variant="ghost"><Plug size={12} />Manage</LinkButton>}
-            />
+            <CardHeader title="Channels" subtitle="Connect each surface to start fanning out generated content." />
             <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
-              {CHANNELS.map((channel) => {
-                const integration = byChannel.get(channel);
-                const status = integration?.status ?? 'disconnected';
-                const tone =
-                  status === 'connected' ? 'ok' :
-                  status === 'error' ? 'err' :
-                  status === 'expired' ? 'warn' : 'neutral';
-                return (
-                  <div key={channel} className="flex items-center justify-between gap-3 px-4 py-3 rounded-md border border-border bg-bg/40">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-fg">{CHANNEL_LABELS[channel]}</div>
-                      <div className="text-xs text-muted mt-0.5">
-                        {integration?.lastSyncAt
-                          ? `Last sync ${new Date(integration.lastSyncAt).toLocaleString()}`
-                          : 'Not connected yet'}
-                      </div>
-                    </div>
-                    <Badge tone={tone}>{status}</Badge>
-                  </div>
-                );
-              })}
+              {cards.map((c) => (
+                <ChannelCard key={c.channel} clientId={id} data={c} />
+              ))}
             </div>
           </Card>
         </div>
+
+        <WebsiteBlogForm clientId={id} currentMode={websiteBlogIntegration ? websiteBlogMode : null} />
 
         <div className="mt-6">
           <Card className="p-6">
