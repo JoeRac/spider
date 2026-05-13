@@ -12,8 +12,8 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { SectionLabel } from './ui';
 import {
-  LayoutDashboard, Users, Plug, Sparkles, FileText, CalendarClock,
-  Settings, BookOpen, Workflow, Search, BarChart3,
+  LayoutDashboard, Users, Sparkles, FileText, CalendarClock,
+  BookOpen, Search, BarChart3, Server,
   PanelLeftClose, PanelLeftOpen, Menu, X as XIcon,
 } from 'lucide-react';
 
@@ -37,13 +37,6 @@ const NAV: NavSection[] = [
     ],
   },
   {
-    label: 'Channels',
-    items: [
-      { href: '/integrations', label: 'Integrations', icon: Plug },
-      { href: '/workflows',    label: 'Workflows',    icon: Workflow },
-    ],
-  },
-  {
     label: 'Growth',
     items: [
       { href: '/seo',       label: 'SEO',       icon: Search },
@@ -53,8 +46,8 @@ const NAV: NavSection[] = [
 ];
 
 const FOOTER: NavItem[] = [
-  { href: '/settings', label: 'Settings', icon: Settings },
-  { href: '/help',     label: 'Help',     icon: BookOpen },
+  { href: '/system', label: 'System', icon: Server },
+  { href: '/help',   label: 'Help',   icon: BookOpen },
 ];
 
 const COLLAPSED_KEY = 'spider:sidebar-collapsed';
