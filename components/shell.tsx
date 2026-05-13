@@ -287,28 +287,20 @@ function NavGroup({ items, pathname, collapsed = false }: { items: NavItem[]; pa
 }
 
 /**
- * Spider mark — a stylised web/spider glyph in the indigo accent palette.
- * Inline SVG so it pairs with any sidebar size without bitmap blur.
+ * Spider mark — bitmap logo served from /public/spider-logo.png.
+ * Same asset is auto-routed by Next 16 as the browser favicon via
+ * app/icon.png + app/apple-icon.png.
  */
 function SpiderMark({ size = 28 }: { size?: number }) {
   return (
-    <svg
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/spider-logo.png"
+      alt=""
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      className="flex-none drop-shadow-sm"
+      className="flex-none"
       aria-hidden
-    >
-      <rect x="0" y="0" width="32" height="32" rx="7" fill="#4f46e5" />
-      <g stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none">
-        <circle cx="16" cy="16" r="3.4" fill="#ffffff" stroke="none" />
-        <path d="M16 4 L16 28" opacity="0.7" />
-        <path d="M4 16 L28 16" opacity="0.7" />
-        <path d="M7.5 7.5 L24.5 24.5" opacity="0.7" />
-        <path d="M24.5 7.5 L7.5 24.5" opacity="0.7" />
-        <path d="M16 10 Q11 11 10 16 Q11 21 16 22 Q21 21 22 16 Q21 11 16 10 Z" opacity="0.9" />
-      </g>
-    </svg>
+    />
   );
 }
