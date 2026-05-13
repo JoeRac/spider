@@ -15,7 +15,9 @@ import {
   LayoutDashboard, Users, Sparkles, FileText, CalendarClock,
   BookOpen, Search, BarChart3, Server,
   PanelLeftClose, PanelLeftOpen, Menu, X as XIcon,
+  Search as SearchIcon,
 } from 'lucide-react';
+import { CommandPalette, openCommandPalette } from './command-palette';
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ size?: number; className?: string }> };
 type NavSection = { label: string; items: NavItem[] };
@@ -141,6 +143,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <main className="min-w-0 min-h-screen flex flex-col">
         {children}
       </main>
+
+      <CommandPalette />
     </div>
   );
 }
@@ -193,7 +197,41 @@ function SidebarContent({
         </button>
       </div>
 
-      <nav className={cn('flex-1 pt-3 pb-3 overflow-y-auto', collapsed ? 'px-1.5' : 'px-2')} aria-label="Primary">
+      {/* Quick jump trigger — opens the ⌘K palette */}
+      <div className={cn('pt-3 pb-2', collapsed ? 'px-2' : 'px-3')}>
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={openCommandPalette}
+            aria-label="Quick jump (⌘K)"
+            title="Quick jump (⌘K)"
+            className="w-full inline-flex items-center justify-center h-8 rounded-md bg-bg/70 border border-border text-muted hover:bg-subtle hover:border-border-strong hover:text-fg transition-colors"
+          >
+            <SearchIcon size={13} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={openCommandPalette}
+            className={cn(
+              'w-full flex items-center gap-2 h-8 px-2.5 rounded-md text-xs',
+              'bg-bg/70 border border-border text-muted',
+              'transition-[background-color,border-color,color] duration-[120ms] ease-out',
+              'hover:bg-subtle hover:border-border-strong hover:text-fg',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-panel',
+            )}
+          >
+            <SearchIcon size={13} />
+            <span className="flex-1 text-left">Quick jump</span>
+            <span className="inline-flex items-center gap-0.5">
+              <kbd className="px-1 rounded border border-border bg-panel text-[9px] text-faint">{mac ? '⌘' : 'Ctrl'}</kbd>
+              <kbd className="px-1 rounded border border-border bg-panel text-[9px] text-faint">K</kbd>
+            </span>
+          </button>
+        )}
+      </div>
+
+      <nav className={cn('flex-1 pb-3 overflow-y-auto', collapsed ? 'px-1.5' : 'px-2')} aria-label="Primary">
         {NAV.map((section) => (
           <div key={section.label} className="mb-2.5">
             {!collapsed && <SectionLabel className="px-3 mb-1">{section.label}</SectionLabel>}
