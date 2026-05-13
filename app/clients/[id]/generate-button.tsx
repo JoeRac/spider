@@ -19,7 +19,7 @@ export function GenerateButton({ clientId }: { clientId: string }) {
       const res = await fetch('/api/content/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ clientId, kind, quantity: 3 }),
+        body: JSON.stringify({ clientId, kind, quantity: 3, withVariants: true }),
       });
       const json = await res.json();
       if (!res.ok) { setMessage(json?.error ?? `Failed (${res.status})`); return; }

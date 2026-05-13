@@ -259,6 +259,57 @@ export const jobs = pgTable('jobs', {
 }));
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Metrics — channel + content engagement
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Account-level snapshot per channel — followers, total posts, etc.
+ * Snapshots are append-only so we can chart growth over time.
+ */
+export const channelMetrics = pgTable('channel_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  integrationId: uuid('integration_id').notNull().references(() => integrations.id, { onDelete: 'cascade' }),
+
+  /** Followers / page-likes / subscribers, depending on channel. */
+  followers: integer('followers'),
+  /** Total posts/tweets/videos on the connected account at snapshot time. */
+  posts: integer('posts'),
+
+  /** Channel-specific extras, kept open-ended. */
+  extra: jsonb('extra').$type<Record<string, number | string | null>>().notNull().default(sql`'{}'::jsonb`),
+
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  integrationIdx: index('channel_metrics_integration_idx').on(t.integrationId),
+  fetchedIdx: index('channel_metrics_fetched_idx').on(t.fetchedAt),
+}));
+
+/**
+ * Per-content engagement — one row per (content_target, fetch). Append-only
+ * so we can chart engagement over the post's lifetime.
+ */
+export const contentMetrics = pgTable('content_metrics', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contentTargetId: uuid('content_target_id').notNull().references(() => contentTargets.id, { onDelete: 'cascade' }),
+
+  /** Channel-agnostic engagement axes — null when not applicable. */
+  impressions: integer('impressions'),
+  likes: integer('likes'),
+  comments: integer('comments'),
+  shares: integer('shares'),
+  clicks: integer('clicks'),
+  views: integer('views'),
+
+  /** Anything channel-specific (e.g. retweets vs quote-tweets). */
+  extra: jsonb('extra').$type<Record<string, number | string | null>>().notNull().default(sql`'{}'::jsonb`),
+
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  targetIdx: index('content_metrics_target_idx').on(t.contentTargetId),
+  fetchedIdx: index('content_metrics_fetched_idx').on(t.fetchedAt),
+}));
+
+/* ──────────────────────────────────────────────────────────────────────────
    SEO — per-client profile + on-page audit history
    ────────────────────────────────────────────────────────────────────────── */
 

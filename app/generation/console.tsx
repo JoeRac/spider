@@ -22,6 +22,7 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
   const [quantity, setQuantity] = useState(3);
   const [brief, setBrief] = useState('');
   const [model, setModel] = useState(defaultModel);
+  const [withVariants, setWithVariants] = useState(true);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +38,7 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
       const res = await fetch('/api/content/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ clientId, kind, quantity, brief: brief || undefined, model: model !== defaultModel ? model : undefined }),
+        body: JSON.stringify({ clientId, kind, quantity, brief: brief || undefined, model: model !== defaultModel ? model : undefined, withVariants }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json?.error ?? `Failed (${res.status})`); return; }
@@ -80,6 +81,18 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
             disabled={disabled}
           />
         </FieldGroup>
+
+        <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
+          <input
+            type="checkbox"
+            checked={withVariants}
+            onChange={(e) => setWithVariants(e.target.checked)}
+            disabled={disabled}
+            className="accent-accent"
+          />
+          <span>Generate per-channel variants</span>
+          <span className="text-xs text-muted">— one tailored body per connected channel, costs a second LLM call.</span>
+        </label>
 
         {error && <div className="text-xs text-err">{error}</div>}
 

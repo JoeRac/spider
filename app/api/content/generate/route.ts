@@ -17,6 +17,7 @@ type Body = {
   quantity?: number;
   brief?: string;
   model?: string;
+  withVariants?: boolean;
 };
 
 export async function POST(req: NextRequest) {

@@ -13,7 +13,7 @@ import { cn } from '@/lib/cn';
 import { SectionLabel } from './ui';
 import {
   LayoutDashboard, Users, Plug, Sparkles, FileText, CalendarClock,
-  Settings, BookOpen, Workflow, Search,
+  Settings, BookOpen, Workflow, Search, BarChart3,
   PanelLeftClose, PanelLeftOpen, Menu, X as XIcon,
 } from 'lucide-react';
 
@@ -46,7 +46,8 @@ const NAV: NavSection[] = [
   {
     label: 'Growth',
     items: [
-      { href: '/seo', label: 'SEO', icon: Search },
+      { href: '/seo',       label: 'SEO',       icon: Search },
+      { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
 ];

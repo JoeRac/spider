@@ -74,6 +74,12 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
       // token is past expiry.
       const refreshed = await maybeRefreshToken(integration.id, integration.channel as Channel, credentials);
       const publisher = getPublisher(integration.channel as Channel);
+      const meta = (row.item.metadata as Record<string, unknown>) ?? {};
+      // Prefer the per-channel variant when available; fall back to the
+      // canonical body so older items + variant-less generations still
+      // publish correctly.
+      const variants = (meta.variants as Record<string, string> | undefined) ?? {};
+      const variantBody = variants[integration.channel] ?? row.item.body;
       const result = await publisher.publish({
         channel: integration.channel as Channel,
         credentials: refreshed,
@@ -82,9 +88,9 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
           id: row.item.id,
           kind: row.item.kind,
           title: row.item.title,
-          body: row.item.body,
+          body: variantBody,
           mediaUrls: (row.item.mediaUrls as string[]) ?? [],
-          metadata: (row.item.metadata as Record<string, unknown>) ?? {},
+          metadata: meta,
         },
       });
       await db.update(contentTargets).set({

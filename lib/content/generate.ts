@@ -12,12 +12,13 @@
  * way to the API layer without leaving an audit trail.
  */
 import { db } from '@/lib/db';
-import { clients, generationRuns, contentItems, type Client } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { clients, generationRuns, contentItems, integrations, type Client, type Channel } from '@/lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { zaiChatJSON, estimateCostCents } from '@/lib/zai';
 import { TEMPLATES, generationOutputSchema, type ContentKind } from './templates';
 import { voiceFromClientSettings, voiceToSystemPrompt } from './voice';
+import { getAdapter } from '@/lib/channels/registry';
 
 export type GenerateInput = {
   clientId: string;
@@ -26,6 +27,10 @@ export type GenerateInput = {
   /** Optional brief from the operator to bias this batch. Free text. */
   brief?: string;
   model?: string;
+  /** When true, also generate per-channel variants for every channel the
+   *  client has a connected integration with. Stored under
+   *  `metadata.variants[channel]`. */
+  withVariants?: boolean;
 };
 
 export type GenerationOutcome = {
@@ -79,7 +84,20 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
       status: 'completed',
     }).where(eq(generationRuns.id, run.id));
 
-    const inserted = await Promise.all(data.items.slice(0, quantity).map(async (item) => {
+    // Optional: derive per-channel variants for every connected channel
+    // on this client. Single follow-up call to the model with the original
+    // bodies — cheap because the variants are short rewrites.
+    const variantsByItem = input.withVariants
+      ? await generateVariants({
+          client,
+          baseItems: data.items.slice(0, quantity).map((i) => ({ title: i.title ?? null, body: i.body })),
+          kind: input.kind,
+          model: input.model,
+        })
+      : null;
+
+    const inserted = await Promise.all(data.items.slice(0, quantity).map(async (item, idx) => {
+      const variants = variantsByItem?.[idx];
       const [row] = await db.insert(contentItems).values({
         clientId: client.id,
         kind: input.kind,
@@ -91,6 +109,7 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
           hashtags: item.hashtags ?? [],
           notes: item.notes ?? null,
           brief: input.brief ?? null,
+          variants: variants ?? undefined,
         },
       }).returning({ id: contentItems.id });
       return row!.id;
@@ -143,3 +162,86 @@ function buildPrompts(client: Client, template: typeof TEMPLATES[ContentKind], q
 // Surface the validation schema so route handlers can use the same one.
 export { generationOutputSchema };
 export type { z };
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Per-channel variants — one extra LLM call rewrites each base item into a
+   short, channel-tailored body. We use the channel adapter labels to keep
+   prompts honest about what each surface expects.
+   ────────────────────────────────────────────────────────────────────────── */
+
+const variantsSchema = z.object({
+  items: z.array(z.object({
+    variants: z.record(z.string(), z.string()),
+  })),
+});
+
+async function generateVariants(opts: {
+  client: Client;
+  baseItems: Array<{ title: string | null; body: string }>;
+  kind: ContentKind;
+  model?: string;
+}): Promise<Record<string, string>[]> {
+  const liveChannels = await db
+    .select({ channel: integrations.channel })
+    .from(integrations)
+    .where(and(eq(integrations.clientId, opts.client.id), eq(integrations.status, 'connected')));
+  const channels = liveChannels.map((r) => r.channel as Channel);
+  if (channels.length === 0) return opts.baseItems.map(() => ({}));
+
+  const adapterDescriptions = channels.map((c) => {
+    const adapter = getAdapter(c);
+    return `- ${c}: ${adapter.label}`;
+  }).join('\n');
+
+  const voice = voiceFromClientSettings(opts.client.settings);
+  const voiceBlock = voiceToSystemPrompt(voice, {
+    name: opts.client.name,
+    city: opts.client.addressCity,
+    state: opts.client.addressState,
+  });
+
+  const systemPrompt = [
+    voiceBlock,
+    '',
+    `You are rewriting a base content item into per-channel variants. Channels:`,
+    adapterDescriptions,
+    '',
+    'Rules:',
+    '- Each variant must respect the channel\'s norms (Twitter: <=280 chars; LinkedIn: professional; Instagram: punchy + hashtags; GMB: local + soft CTA; Facebook: warm; website_blog: longer; YouTube: description shape).',
+    '- Do not invent facts beyond the source body.',
+    '- Each variant should read like it was written for that channel, not translated.',
+    '',
+    'Output JSON: { items: [ { variants: { [channelKey]: "body" } } ] } — exactly one entry per source item, in input order.',
+  ].join('\n');
+
+  const userPrompt = opts.baseItems.map((it, i) =>
+    `Item ${i + 1}${it.title ? ` (title: "${it.title}")` : ''}:\n${it.body}`
+  ).join('\n\n---\n\n');
+
+  try {
+    const result = await zaiChatJSON({
+      schema: variantsSchema,
+      model: opts.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      maxTokens: 2500,
+    });
+    // Trim to known channels only.
+    const out = opts.baseItems.map((_, i) => {
+      const v = result.data.items[i]?.variants ?? {};
+      const filtered: Record<string, string> = {};
+      for (const channel of channels) {
+        const candidate = v[channel];
+        if (typeof candidate === 'string' && candidate.trim()) filtered[channel] = candidate.trim();
+      }
+      return filtered;
+    });
+    return out;
+  } catch {
+    // Variants are best-effort — if the call fails the base bodies still ship.
+    return opts.baseItems.map(() => ({}));
+  }
+}

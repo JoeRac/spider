@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { ContentEditor } from './editor';
 import { ScheduleCard } from './schedule-card';
 import { MediaPanel } from './media-panel';
+import { VariantsCard } from './variants-card';
 import { listAdapters } from '@/lib/channels/registry';
 
 export const dynamic = 'force-dynamic';
@@ -83,6 +84,12 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
             }} />
 
             <MediaPanel itemId={item.id} clientId={item.clientId} urls={(item.mediaUrls as string[]) ?? []} />
+
+            <VariantsCard
+              itemId={item.id}
+              baseBody={item.body}
+              variants={((item.metadata as Record<string, unknown>)?.variants as Record<string, string> | undefined) ?? {}}
+            />
 
             <ScheduleCard
               itemId={item.id}

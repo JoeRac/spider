@@ -20,6 +20,9 @@ const patchSchema = z.object({
   body: z.string().optional(),
   status: z.enum(['draft', 'scheduled', 'published', 'failed', 'archived']).optional(),
   scheduledFor: z.string().nullable().optional(),
+  /** Shallow-merge into the existing metadata blob. Used by the variants
+   *  editor to update `metadata.variants` without clobbering hashtags etc. */
+  metadataPatch: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,9 +32,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return err(400, parsed.error.message);
 
-  const next: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+  const next: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.title !== undefined) next.title = parsed.data.title;
+  if (parsed.data.body !== undefined) next.body = parsed.data.body;
+  if (parsed.data.status !== undefined) next.status = parsed.data.status;
   if (parsed.data.scheduledFor !== undefined) {
     next.scheduledFor = parsed.data.scheduledFor ? new Date(parsed.data.scheduledFor) : null;
+  }
+
+  if (parsed.data.metadataPatch) {
+    const [existing] = await db.select({ metadata: contentItems.metadata }).from(contentItems).where(eq(contentItems.id, id)).limit(1);
+    next.metadata = { ...(existing?.metadata ?? {}), ...parsed.data.metadataPatch };
   }
 
   const [row] = await db.update(contentItems).set(next).where(eq(contentItems.id, id)).returning();
