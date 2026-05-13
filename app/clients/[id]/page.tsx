@@ -1,14 +1,18 @@
 import { Shell } from '@/components/shell';
-import { Page, PageHeader, Card, CardHeader, Badge, Dot, MetaList, SectionLabel } from '@/components/ui';
+import { Page, PageHeader, Card, CardHeader, Badge, Dot, MetaList, Empty } from '@/components/ui';
 import { db } from '@/lib/db';
-import { clients, integrations, CHANNELS, type Channel } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { clients, integrations, contentItems, CHANNELS } from '@/lib/db/schema';
+import { eq, desc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
-import { MapPin, Globe, Phone, Mail } from 'lucide-react';
+import { MapPin, Globe, Phone, Mail, FileText } from 'lucide-react';
+import Link from 'next/link';
 import { listAdapters } from '@/lib/channels/registry';
 import { ChannelCard, type ChannelCardData } from './channel-card';
 import { WebsiteBlogForm } from './website-blog-form';
 import { Banner } from './banner';
+import { VoiceEditor } from './voice-editor';
+import { GenerateButton } from './generate-button';
+import { voiceFromClientSettings } from '@/lib/content/voice';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,9 +25,15 @@ export default async function ClientDetailPage({ params, searchParams }: {
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
 
-  const existing = await db.select().from(integrations).where(eq(integrations.clientId, id));
-  const byChannel = new Map(existing.map((i) => [i.channel, i]));
+  const [existing, recentContent] = await Promise.all([
+    db.select().from(integrations).where(eq(integrations.clientId, id)),
+    db.select({
+      id: contentItems.id, kind: contentItems.kind, title: contentItems.title,
+      body: contentItems.body, status: contentItems.status, createdAt: contentItems.createdAt,
+    }).from(contentItems).where(eq(contentItems.clientId, id)).orderBy(desc(contentItems.createdAt)).limit(8),
+  ]);
 
+  const byChannel = new Map(existing.map((i) => [i.channel, i]));
   const adapters = listAdapters();
   const cards: ChannelCardData[] = CHANNELS.map((channel) => {
     const adapter = adapters.find((a) => a.channel === channel)!;
@@ -49,6 +59,7 @@ export default async function ClientDetailPage({ params, searchParams }: {
 
   const integrationError = typeof sp.integration_error === 'string' ? sp.integration_error : null;
   const integrationConnected = typeof sp.integration_connected === 'string' ? sp.integration_connected : null;
+  const voice = voiceFromClientSettings(client.settings);
 
   return (
     <Shell>
@@ -56,7 +67,10 @@ export default async function ClientDetailPage({ params, searchParams }: {
         breadcrumbs={[{ label: 'Clients', href: '/clients' }, { label: client.name }]}
         title={client.name}
         subtitle={[client.addressCity, client.addressState].filter(Boolean).join(', ') || undefined}
-        actions={<Badge tone={client.status === 'active' ? 'ok' : 'info'}><Dot tone={client.status === 'active' ? 'ok' : 'info'} />{client.status}</Badge>}
+        actions={<div className="flex items-center gap-2">
+          <Badge tone={client.status === 'active' ? 'ok' : 'info'}><Dot tone={client.status === 'active' ? 'ok' : 'info'} />{client.status}</Badge>
+          <GenerateButton clientId={id} />
+        </div>}
       />
       <Page>
         {(integrationError || integrationConnected) && (
@@ -92,16 +106,43 @@ export default async function ClientDetailPage({ params, searchParams }: {
           </Card>
         </div>
 
-        <WebsiteBlogForm clientId={id} currentMode={websiteBlogIntegration ? websiteBlogMode : null} />
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <VoiceEditor clientId={id} initial={voice} />
 
-        <div className="mt-6">
-          <Card className="p-6">
-            <SectionLabel className="mb-2">Description</SectionLabel>
-            <div className="text-sm text-muted leading-relaxed">
-              {client.description ?? <span className="text-faint italic">No description yet — add one to give the content engine context about this client&apos;s voice and niche.</span>}
-            </div>
+          <Card>
+            <CardHeader
+              title="Recent content"
+              subtitle="Drafts + scheduled items generated for this client."
+              action={<Link href={`/content?clientId=${id}`} className="text-xs text-muted hover:text-fg">View all →</Link>}
+            />
+            {recentContent.length === 0 ? (
+              <div className="p-5">
+                <Empty
+                  icon={<FileText size={24} />}
+                  title="No content yet"
+                  hint="Use Generate content above to spin up a batch."
+                />
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {recentContent.map((r) => (
+                  <li key={r.id}>
+                    <Link href={`/content/${r.id}`} className="block px-5 py-3 hover:bg-subtle/40 transition-colors">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge tone={r.status === 'published' ? 'ok' : r.status === 'failed' ? 'err' : 'info'}>{r.status}</Badge>
+                        <span className="text-[10px] uppercase tracking-wider text-faint font-semibold">{r.kind}</span>
+                        <span className="text-[10px] text-muted ml-auto">{new Date(r.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <div className="text-sm text-fg font-medium truncate">{r.title ?? r.body.slice(0, 80) + '…'}</div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
+
+        <WebsiteBlogForm clientId={id} currentMode={websiteBlogIntegration ? websiteBlogMode : null} />
       </Page>
     </Shell>
   );
