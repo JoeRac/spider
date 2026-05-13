@@ -13,6 +13,8 @@ import { Banner } from './banner';
 import { VoiceEditor } from './voice-editor';
 import { GenerateButton } from './generate-button';
 import { voiceFromClientSettings } from '@/lib/content/voice';
+import { SeoPanel } from './seo-panel';
+import { getProfile, latestAudit } from '@/lib/seo/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,12 +27,14 @@ export default async function ClientDetailPage({ params, searchParams }: {
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
 
-  const [existing, recentContent] = await Promise.all([
+  const [existing, recentContent, seoProfile, seoAudit] = await Promise.all([
     db.select().from(integrations).where(eq(integrations.clientId, id)),
     db.select({
       id: contentItems.id, kind: contentItems.kind, title: contentItems.title,
       body: contentItems.body, status: contentItems.status, createdAt: contentItems.createdAt,
     }).from(contentItems).where(eq(contentItems.clientId, id)).orderBy(desc(contentItems.createdAt)).limit(8),
+    getProfile(id),
+    latestAudit(id),
   ]);
 
   const byChannel = new Map(existing.map((i) => [i.channel, i]));
@@ -140,6 +144,27 @@ export default async function ClientDetailPage({ params, searchParams }: {
               </ul>
             )}
           </Card>
+        </div>
+
+        <div className="mt-6">
+          <SeoPanel
+            clientId={id}
+            fallbackWebsite={client.website ?? null}
+            initialProfile={seoProfile ? {
+              siteUrl: seoProfile.siteUrl,
+              primaryLocation: seoProfile.primaryLocation,
+              targetKeywords: seoProfile.targetKeywords ?? [],
+              schemaType: seoProfile.schemaType,
+              notes: seoProfile.notes,
+            } : null}
+            initialAudit={seoAudit ? {
+              id: seoAudit.id,
+              score: seoAudit.score,
+              url: seoAudit.url,
+              findings: seoAudit.findings ?? [],
+              createdAt: new Date(seoAudit.createdAt).toISOString(),
+            } : null}
+          />
         </div>
 
         <WebsiteBlogForm clientId={id} currentMode={websiteBlogIntegration ? websiteBlogMode : null} />

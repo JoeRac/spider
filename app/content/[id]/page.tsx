@@ -7,6 +7,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ContentEditor } from './editor';
 import { ScheduleCard } from './schedule-card';
+import { MediaPanel } from './media-panel';
 import { listAdapters } from '@/lib/channels/registry';
 
 export const dynamic = 'force-dynamic';
@@ -80,6 +81,8 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
               status: item.status,
               scheduledFor: item.scheduledFor ? new Date(item.scheduledFor).toISOString() : null,
             }} />
+
+            <MediaPanel itemId={item.id} clientId={item.clientId} urls={(item.mediaUrls as string[]) ?? []} />
 
             <ScheduleCard
               itemId={item.id}

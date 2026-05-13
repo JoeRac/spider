@@ -258,6 +258,85 @@ export const jobs = pgTable('jobs', {
   kindIdx: index('jobs_kind_idx').on(t.kind),
 }));
 
+/* ──────────────────────────────────────────────────────────────────────────
+   SEO — per-client profile + on-page audit history
+   ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * One row per client. Holds the SEO knobs the operator hand-curates and
+ * the engine uses (a) when generating content, and (b) when ranking
+ * audit findings. Kept as a table (rather than `clients.settings.seo`)
+ * so we can index target_keywords + run cross-client reports.
+ */
+export const seoProfiles = pgTable('seo_profiles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+
+  /** Canonical URL of the client's site — we audit this. */
+  siteUrl: text('site_url'),
+
+  /** Primary geo target — e.g. "Phoenix, AZ" — surfaced in local pack reports. */
+  primaryLocation: text('primary_location'),
+
+  /** Target keywords the client wants to rank for. UI is one-per-line; we
+   *  store as a flat array for cheap reads + indexability. */
+  targetKeywords: jsonb('target_keywords').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+
+  /** Optional schema-org overrides (LocalBusiness, AutoDealer, etc.). */
+  schemaType: text('schema_type'),
+
+  /** Free-form notes from the operator. */
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  clientIdx: uniqueIndex('seo_profiles_client_idx').on(t.clientId),
+}));
+
+/**
+ * One row per audit run. `findings` is an array of issue objects so the
+ * UI can render a checklist; `score` is the aggregate (0–100) for the
+ * dashboard's at-a-glance bar.
+ *
+ * We keep history so improvement-over-time is visible. Rows are
+ * append-only; nothing edits an existing audit.
+ */
+export const seoAudits = pgTable('seo_audits', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+
+  /** What URL was audited. Mirrors seo_profiles.site_url at run time. */
+  url: text('url').notNull(),
+
+  /** Aggregate 0–100. */
+  score: integer('score').notNull().default(0),
+
+  /** Array of `{ id, severity, title, detail, hint? }`. */
+  findings: jsonb('findings').$type<Array<{
+    id: string;
+    severity: 'info' | 'warn' | 'fail';
+    title: string;
+    detail?: string;
+    hint?: string;
+  }>>().notNull().default(sql`'[]'::jsonb`),
+
+  /** Captured snapshot for debugging — title, h1s, meta description. */
+  snapshot: jsonb('snapshot').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+
+  status: text('status').notNull().default('completed'),
+  error: text('error'),
+
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  clientIdx: index('seo_audits_client_idx').on(t.clientId),
+  createdIdx: index('seo_audits_created_idx').on(t.createdAt),
+}));
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Audit log (the existing append-only mutation history)
+   ────────────────────────────────────────────────────────────────────────── */
+
 export const auditLog = pgTable('audit_log', {
   id: uuid('id').primaryKey().defaultRandom(),
 
