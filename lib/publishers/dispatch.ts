@@ -21,6 +21,7 @@ import { eq, and, lte, isNull, or, lt, ne } from 'drizzle-orm';
 import { decryptJSON } from '@/lib/crypto';
 import { getPublisher } from './registry';
 import { getAdapter } from '@/lib/channels/registry';
+import { pingIndexNow } from '@/lib/seo/indexnow';
 
 const MAX_ATTEMPTS = 4;
 const BATCH_SIZE = 25;
@@ -102,6 +103,14 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
         updatedAt: new Date(),
       }).where(eq(contentTargets.id, row.target.id));
       published += 1;
+
+      // SEO side-effect: when a website_blog post lands, ping IndexNow
+      // so Bing/Yandex/etc reindex quickly. Best-effort — errors don't
+      // unwind the publish.
+      if (integration.channel === 'website_blog' && result.externalUrl) {
+        try { await pingIndexNow(integration.clientId, result.externalUrl); }
+        catch { /* logged inside pingIndexNow */ }
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'publish failed';
       const giveUp = row.target.attempts + 1 >= MAX_ATTEMPTS;

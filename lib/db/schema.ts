@@ -385,6 +385,53 @@ export const seoAudits = pgTable('seo_audits', {
 }));
 
 /* ──────────────────────────────────────────────────────────────────────────
+   SEO operations: citations + sitemaps + IndexNow pings
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const seoCitations = pgTable('seo_citations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  /** Key from the catalog in lib/seo/citations.ts — e.g. 'yelp'. */
+  directoryKey: text('directory_key').notNull(),
+  /** 'missing' | 'partial' | 'complete' | 'na' */
+  status: text('status').notNull().default('missing'),
+  url: text('url'),
+  notes: text('notes'),
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniq: uniqueIndex('seo_citations_client_directory_idx').on(t.clientId, t.directoryKey),
+  clientIdx: index('seo_citations_client_idx').on(t.clientId),
+}));
+
+export const seoSitemaps = pgTable('seo_sitemaps', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  urlCount: integer('url_count').notNull().default(0),
+  lastmodAt: timestamp('lastmod_at', { withTimezone: true }),
+  status: text('status').notNull().default('completed'),
+  error: text('error'),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  clientIdx: index('seo_sitemaps_client_idx').on(t.clientId),
+  fetchedIdx: index('seo_sitemaps_fetched_idx').on(t.fetchedAt),
+}));
+
+export const seoIndexPings = pgTable('seo_index_pings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clientId: uuid('client_id').notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  provider: text('provider').notNull(),
+  status: text('status').notNull(),
+  response: text('response'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  clientIdx: index('seo_index_pings_client_idx').on(t.clientId),
+}));
+
+/* ──────────────────────────────────────────────────────────────────────────
    Audit log (the existing append-only mutation history)
    ────────────────────────────────────────────────────────────────────────── */
 

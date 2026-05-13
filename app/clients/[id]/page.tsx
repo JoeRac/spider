@@ -14,7 +14,11 @@ import { VoiceEditor } from './voice-editor';
 import { GenerateButton } from './generate-button';
 import { voiceFromClientSettings } from '@/lib/content/voice';
 import { SeoPanel } from './seo-panel';
+import { CitationsCard } from './citations-card';
+import { SitemapCard } from './sitemap-card';
 import { getProfile, latestAudit } from '@/lib/seo/audit';
+import { seoCitations, seoSitemaps } from '@/lib/db/schema';
+import { CITATION_DIRECTORIES } from '@/lib/seo/citations';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +31,7 @@ export default async function ClientDetailPage({ params, searchParams }: {
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
 
-  const [existing, recentContent, seoProfile, seoAudit] = await Promise.all([
+  const [existing, recentContent, seoProfile, seoAudit, citationRows, sitemapRows] = await Promise.all([
     db.select().from(integrations).where(eq(integrations.clientId, id)),
     db.select({
       id: contentItems.id, kind: contentItems.kind, title: contentItems.title,
@@ -35,7 +39,20 @@ export default async function ClientDetailPage({ params, searchParams }: {
     }).from(contentItems).where(eq(contentItems.clientId, id)).orderBy(desc(contentItems.createdAt)).limit(8),
     getProfile(id),
     latestAudit(id),
+    db.select().from(seoCitations).where(eq(seoCitations.clientId, id)),
+    db.select().from(seoSitemaps).where(eq(seoSitemaps.clientId, id)).orderBy(desc(seoSitemaps.fetchedAt)).limit(20),
   ]);
+
+  const citationByKey = new Map(citationRows.map((r) => [r.directoryKey, r]));
+  const citationItems = CITATION_DIRECTORIES.map((d) => {
+    const row = citationByKey.get(d.key);
+    return {
+      directory: d,
+      status: (row?.status ?? 'missing') as 'missing' | 'partial' | 'complete' | 'na',
+      url: row?.url ?? null,
+      notes: row?.notes ?? null,
+    };
+  });
 
   const byChannel = new Map(existing.map((i) => [i.channel, i]));
   const adapters = listAdapters();
@@ -144,6 +161,22 @@ export default async function ClientDetailPage({ params, searchParams }: {
               </ul>
             )}
           </Card>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CitationsCard clientId={id} items={citationItems} />
+          <SitemapCard
+            clientId={id}
+            initialSnapshots={sitemapRows.map((s) => ({
+              id: s.id,
+              url: s.url,
+              urlCount: s.urlCount,
+              lastmodAt: s.lastmodAt ? new Date(s.lastmodAt).toISOString() : null,
+              status: s.status,
+              error: s.error,
+              fetchedAt: new Date(s.fetchedAt).toISOString(),
+            }))}
+          />
         </div>
 
         <div className="mt-6">
