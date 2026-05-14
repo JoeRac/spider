@@ -450,9 +450,13 @@ export const auditLog = pgTable('audit_log', {
   /** Free-form details. Keep readable JSON; don't store huge blobs. */
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
 
+  /** Fleet-wide correlation id (X-Trace-Id, format `tr_<hex>`). */
+  traceId: text('trace_id'),
+
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
   eventIdx: index('audit_log_event_idx').on(t.event),
   createdIdx: index('audit_log_created_idx').on(t.createdAt),
   targetIdx: index('audit_log_target_idx').on(t.targetType, t.targetId),
+  traceIdx: index('audit_log_trace_idx').on(t.traceId),
 }));

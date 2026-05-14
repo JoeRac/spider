@@ -12,6 +12,7 @@
  * — see `app/api/integrations/won/route.ts` in the Badger repo.
  */
 import { config } from '@/lib/config';
+import { mintTraceId } from '@/lib/trace';
 
 export type BadgerWonClient = {
   /** Badger company id — Spider stores this as `clients.badger_company_id`. */
@@ -48,6 +49,7 @@ export async function fetchBadgerWonClients(): Promise<BadgerWonClient[]> {
       'authorization': `Bearer ${config.badgerApiKey}`,
       'x-integration-app': 'spider',
       'x-integration-timestamp': String(Date.now()),
+      'x-trace-id': mintTraceId(),
     },
     cache: 'no-store',
   });
