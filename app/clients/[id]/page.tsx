@@ -7,7 +7,7 @@ import {
 } from '@/lib/db/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
-import { MapPin, Globe, Phone, Mail, FileText } from 'lucide-react';
+import { MapPin, Globe, Phone, Mail, FileText, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { listAdapters } from '@/lib/channels/registry';
 import { ChannelCard, type ChannelCardData } from './channel-card';
@@ -171,7 +171,21 @@ async function OverviewTab({ clientId, client, integrationRows }: {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-1">
-          <CardHeader title="Profile" subtitle="Imported from Badger" />
+          <CardHeader
+            title="Profile"
+            subtitle="Lead facts come from Badger — edit them there and changes sync back."
+            action={badgerEditUrlFor(client.badgerCompanyId) && (
+              <a
+                href={badgerEditUrlFor(client.badgerCompanyId)!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:text-accent-strong"
+                title="Open in Badger CRM"
+              >
+                Edit in Badger <ExternalLink size={10} />
+              </a>
+            )}
+          />
           <div className="px-5 py-4">
             <MetaList items={[
               { label: <span className="inline-flex items-center gap-1.5"><Globe size={12} className="text-faint" />Website</span>,
@@ -421,6 +435,13 @@ function asString(v: string | string[] | undefined): string | null {
   if (typeof v === 'string') return v;
   if (Array.isArray(v)) return v[0] ?? null;
   return null;
+}
+
+function badgerEditUrlFor(badgerCompanyId: string | null): string | null {
+  if (!badgerCompanyId) return null;
+  const base = process.env.NEXT_PUBLIC_BADGER_BASE_URL;
+  if (!base) return null;
+  return `${base.replace(/\/+$/, '')}/companies/${badgerCompanyId}`;
 }
 
 function eqAnd<A, B>(colA: A, valA: unknown, colB: B, valB: unknown) {

@@ -7,6 +7,15 @@ import { ok, err, readJson } from '@/lib/api-helpers';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+/* Fields owned by Badger (the lead-facts source of truth). Every Spider
+ * client is bound to a Badger company by schema design (badgerCompanyId
+ * is NOT NULL), so we always strip these from PATCH bodies — edits to
+ * lead facts must happen in Badger and sync back. */
+const BADGER_OWNED_FIELDS = [
+  'name', 'website', 'phone', 'email',
+  'addressStreet', 'addressCity', 'addressState', 'addressPostcode', 'addressCountry',
+] as const;
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [row] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
@@ -22,6 +31,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     website: string | null;
     phone: string | null;
     email: string | null;
+    addressStreet: string | null;
+    addressCity: string | null;
+    addressState: string | null;
+    addressPostcode: string | null;
+    addressCountry: string | null;
     description: string | null;
     status: string;
     tags: string[];
@@ -29,8 +43,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }>>(req);
   if (body instanceof Response) return body;
 
+  const patch: Record<string, unknown> = { ...body };
+  for (const f of BADGER_OWNED_FIELDS) delete patch[f];
+
   const [row] = await db.update(clients)
-    .set({ ...body, updatedAt: new Date() })
+    .set({ ...patch, updatedAt: new Date() })
     .where(eq(clients.id, id))
     .returning();
   if (!row) return err(404, 'Client not found');
