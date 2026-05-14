@@ -81,6 +81,9 @@ export const clients = pgTable('clients', {
   settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
 
   importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Stamped when Badger's lead-sync push successfully applied to this
+   *  row. Used by the receiver to drop out-of-order replays. */
+  badgerLastSyncAt: timestamp('badger_last_sync_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
