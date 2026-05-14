@@ -12,6 +12,7 @@ import { db } from '@/lib/db';
 import { contentItems, contentTargets, integrations, CHANNELS, type Channel } from '@/lib/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { ok, err, readJson } from '@/lib/api-helpers';
+import { silverbackEnqueueForClient, spiderContentDeepLink } from '@/lib/integrations/silverback';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -79,6 +80,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     scheduledFor: body.scheduledFor ? new Date(body.scheduledFor) : null,
     updatedAt: new Date(),
   }).where(eq(contentItems.id, id));
+
+  /* Fleet timeline — surface the schedule decision with channel list
+   * and the scheduled-for timestamp (or "now" when unset). Idempotency
+   * keyed on item id + scheduledFor so re-scheduling produces a new
+   * event but exact replays collapse. */
+  const channelList = body.channels.filter((c) => !skipped.includes(c));
+  await silverbackEnqueueForClient(item.clientId, {
+    event_type: 'content.scheduled',
+    summary: channelList.length === 0
+      ? 'Content scheduled but no live channels'
+      : body.scheduledFor
+        ? `Scheduled ${item.kind} for ${new Date(body.scheduledFor).toLocaleString()} on ${channelList.join(', ')}`
+        : `Queued ${item.kind} for ASAP publish on ${channelList.join(', ')}`,
+    payload: {
+      content_id: id,
+      kind: item.kind,
+      title: item.title,
+      scheduled_for: body.scheduledFor ?? null,
+      channels: channelList,
+      skipped_channels: skipped,
+    },
+    deep_link: spiderContentDeepLink(id),
+    idempotency_key: `spider:content.scheduled:${id}:${body.scheduledFor ?? 'now'}`,
+  });
 
   return ok({
     scheduledFor: body.scheduledFor ?? null,

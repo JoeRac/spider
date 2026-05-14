@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/sitemap-refresh",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/silverback-drain",
+      "schedule": "* * * * *"
     }
   ],
   "headers": [

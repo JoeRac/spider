@@ -111,11 +111,33 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
           brief: input.brief ?? null,
           variants: variants ?? undefined,
         },
-      }).returning({ id: contentItems.id });
-      return row!.id;
+      }).returning({ id: contentItems.id, title: contentItems.title });
+      return row!;
     }));
 
-    return { runId: run.id, status: 'completed', itemIds: inserted, costCents };
+    /* Fleet timeline — one event per drafted item so the dossier shows
+     * each piece individually. Idempotency keyed on the row id; safe
+     * if the generation route is retried. */
+    const { silverbackEnqueueForClient, spiderContentDeepLink } = await import('@/lib/integrations/silverback');
+    for (const row of inserted) {
+      await silverbackEnqueueForClient(client.id, {
+        event_type: 'content.drafted',
+        summary: `Drafted ${input.kind}${row.title ? `: "${row.title}"` : ''}`,
+        payload: {
+          content_id: row.id,
+          kind: input.kind,
+          title: row.title,
+          generation_run_id: run.id,
+          model: input.model ?? null,
+          brief: input.brief ?? null,
+        },
+        deep_link: spiderContentDeepLink(row.id),
+        actor: 'system',
+        idempotency_key: `spider:content.drafted:${row.id}`,
+      });
+    }
+
+    return { runId: run.id, status: 'completed', itemIds: inserted.map((r) => r.id), costCents };
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Generation failed';
     await db.update(generationRuns).set({ status: 'failed', error: message }).where(eq(generationRuns.id, run.id));

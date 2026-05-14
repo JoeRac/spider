@@ -22,6 +22,7 @@ import { decryptJSON } from '@/lib/crypto';
 import { getPublisher } from './registry';
 import { getAdapter } from '@/lib/channels/registry';
 import { pingIndexNow } from '@/lib/seo/indexnow';
+import { silverbackEnqueueForClient, spiderContentDeepLink } from '@/lib/integrations/silverback';
 
 const MAX_ATTEMPTS = 4;
 const BATCH_SIZE = 25;
@@ -111,6 +112,26 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
         try { await pingIndexNow(integration.clientId, result.externalUrl); }
         catch { /* logged inside pingIndexNow */ }
       }
+
+      /* Fleet timeline — one event per channel publish. Idempotency
+       * keyed on the target id so retried-then-succeeded rows don't
+       * fire twice. */
+      await silverbackEnqueueForClient(integration.clientId, {
+        event_type: 'content.published',
+        summary: `Published ${row.item.kind} on ${integration.channel}${row.item.title ? `: "${row.item.title}"` : ''}`,
+        payload: {
+          content_id: row.item.id,
+          target_id: row.target.id,
+          channel: integration.channel,
+          kind: row.item.kind,
+          title: row.item.title,
+          external_id: result.externalId || null,
+          external_url: result.externalUrl ?? null,
+        },
+        deep_link: spiderContentDeepLink(row.item.id),
+        actor: 'cron:publisher',
+        idempotency_key: `spider:content.published:${row.target.id}`,
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'publish failed';
       const giveUp = row.target.attempts + 1 >= MAX_ATTEMPTS;
@@ -120,6 +141,27 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
         updatedAt: new Date(),
       }).where(eq(contentTargets.id, row.target.id));
       failed += 1;
+
+      /* Emit on PERMANENT failure only — transient retries shouldn't
+       * spam the timeline. Idempotency keyed on target id, terminal. */
+      if (giveUp) {
+        await silverbackEnqueueForClient(row.integration.clientId, {
+          event_type: 'content.failed',
+          summary: `Failed publishing ${row.item.kind} on ${row.integration.channel}: ${message.slice(0, 120)}`,
+          payload: {
+            content_id: row.item.id,
+            target_id: row.target.id,
+            channel: row.integration.channel,
+            kind: row.item.kind,
+            title: row.item.title,
+            attempts: row.target.attempts + 1,
+            error: message,
+          },
+          deep_link: spiderContentDeepLink(row.item.id),
+          actor: 'cron:publisher',
+          idempotency_key: `spider:content.failed:${row.target.id}`,
+        });
+      }
     }
   }
 

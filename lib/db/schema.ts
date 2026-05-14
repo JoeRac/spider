@@ -28,7 +28,7 @@
  *   Phase 3 ⇒ content_items + content_targets + generation_runs
  *   Phase 4 ⇒ jobs + cron-driven publish loop
  */
-import { pgTable, uuid, text, timestamp, boolean, integer, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, boolean, integer, jsonb, varchar, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -437,6 +437,28 @@ export const seoIndexPings = pgTable('seo_index_pings', {
 /* ──────────────────────────────────────────────────────────────────────────
    Audit log (the existing append-only mutation history)
    ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Durable outbox for Silverback emits. Fire-and-forget HTTP from a
+ * Vercel route handler is unreliable (lambda dies on response), so
+ * every emit writes one row here synchronously. The /api/cron/
+ * silverback-drain worker reads pending rows, POSTs to Silverback's
+ * /api/events, and applies exponential backoff on failure. Silverback
+ * dedupes on (source_app, idempotency_key) end-to-end.
+ */
+export const silverbackOutbox = pgTable('silverback_outbox', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  event: jsonb('event').$type<Record<string, unknown>>().notNull(),
+  idempotencyKey: varchar('idempotency_key', { length: 160 }).notNull().unique(),
+  status: varchar('status', { length: 16 }).notNull().default('pending'),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export type SilverbackOutboxRow = typeof silverbackOutbox.$inferSelect;
 
 export const auditLog = pgTable('audit_log', {
   id: uuid('id').primaryKey().defaultRandom(),
