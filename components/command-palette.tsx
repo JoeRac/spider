@@ -18,9 +18,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import {
-  LayoutDashboard, Users, FileText, Sparkles, CalendarClock,
+  Users, FileText, Sparkles, CalendarClock,
   Search as SearchIcon, BarChart3, Server, BookOpen,
-  ArrowRight, Download, Plug,
+  ArrowRight, Download,
 } from 'lucide-react';
 
 type Item = {
@@ -34,8 +34,7 @@ type Item = {
 };
 
 const STATIC_NAV: Item[] = [
-  { key: 'nav:dashboard',  section: 'Navigation', label: 'Dashboard',       href: '/',           icon: <LayoutDashboard size={14} /> },
-  { key: 'nav:clients',    section: 'Navigation', label: 'Clients',         href: '/clients',    icon: <Users size={14} /> },
+  { key: 'nav:clients',    section: 'Navigation', label: 'Clients (home)',  href: '/clients',    icon: <Users size={14} /> },
   { key: 'nav:content',          section: 'Navigation', label: 'Content',          href: '/content',                  icon: <FileText size={14} /> },
   { key: 'nav:content-calendar', section: 'Navigation', label: 'Content calendar', href: '/content?view=calendar',    icon: <CalendarClock size={14} /> },
   { key: 'nav:content-generate', section: 'Navigation', label: 'Generate content', href: '/content?view=generate',    icon: <Sparkles size={14} /> },

@@ -5,7 +5,7 @@ import {
   clients, integrations, contentItems, CHANNELS, type Channel,
   seoCitations, seoSitemaps,
 } from '@/lib/db/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { and, eq, desc, sql } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import { MapPin, Globe, Phone, Mail, FileText, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
@@ -26,6 +26,9 @@ import { getProfile, latestAudit } from '@/lib/seo/audit';
 import { CITATION_DIRECTORIES } from '@/lib/seo/citations';
 import { buildClientJsonLd, jsonLdToScriptTag } from '@/lib/seo/jsonld';
 import { autopilotFromClientSettings } from '@/lib/content/autopilot';
+import { computeClientHealth, healthTone } from '@/lib/client-health';
+import { gte } from 'drizzle-orm';
+import { contentTargets } from '@/lib/db/schema';
 import { ClientTabBar, type ClientTab } from './tab-bar';
 
 export const dynamic = 'force-dynamic';
@@ -41,14 +44,25 @@ export default async function ClientDetailPage({ params, searchParams }: {
   const [client] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!client) notFound();
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
   const [
     integrationRows,
     contentCount,
     integrationCount,
+    [publishedLast30Row],
   ] = await Promise.all([
     db.select().from(integrations).where(eq(integrations.clientId, id)),
     db.select({ n: sql<number>`count(*)::int` }).from(contentItems).where(eq(contentItems.clientId, id)),
     db.select({ n: sql<number>`count(*)::int` }).from(integrations).where(eq(integrations.clientId, id)),
+    db.select({ n: sql<number>`count(*)::int` })
+      .from(contentTargets)
+      .innerJoin(contentItems, eq(contentItems.id, contentTargets.contentItemId))
+      .where(and(
+        eq(contentItems.clientId, id),
+        eq(contentTargets.status, 'published'),
+        gte(contentTargets.publishedAt, thirtyDaysAgo),
+      )),
   ]);
 
   const integrationError = asString(sp.integration_error);
@@ -59,6 +73,20 @@ export default async function ClientDetailPage({ params, searchParams }: {
     content: contentCount[0]?.n ?? 0,
   };
 
+  // Compute the page-level health badge once (the Overview tab uses the
+  // same number, computed independently — minor duplication kept for
+  // simplicity).
+  const policy = autopilotFromClientSettings(client.settings);
+  const seo = await latestAudit(id);
+  const health = computeClientHealth({
+    status: client.status,
+    autopilotMode: policy.mode,
+    connectedChannels: integrationRows.filter((i) => i.status === 'connected').length,
+    publishedLast30d: publishedLast30Row?.n ?? 0,
+    seoScore: seo?.score ?? null,
+  });
+  const healthBadgeTone = healthTone(health.label);
+
   return (
     <Shell>
       <PageHeader
@@ -66,12 +94,30 @@ export default async function ClientDetailPage({ params, searchParams }: {
         title={client.name}
         subtitle={[client.addressCity, client.addressState].filter(Boolean).join(', ') || undefined}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <div
+              className="text-right"
+              title={`Channels ${health.factors.channels} · Velocity ${health.factors.velocity} · SEO ${health.factors.seo} · Autopilot ${health.factors.autopilot}`}
+            >
+              <div className="text-[9px] uppercase tracking-wider text-faint font-semibold">Health</div>
+              <div className={`text-lg font-semibold tabular-nums leading-none ${
+                healthBadgeTone === 'ok' ? 'text-ok' :
+                healthBadgeTone === 'warn' ? 'text-warn' :
+                healthBadgeTone === 'err' ? 'text-err' :
+                'text-muted'
+              }`}>{health.score}<span className="text-muted text-xs"> /100</span></div>
+            </div>
             <Badge tone={client.status === 'active' ? 'ok' : client.status === 'paused' ? 'warn' : 'info'}>
               <Dot tone={client.status === 'active' ? 'ok' : client.status === 'paused' ? 'warn' : 'info'} />
               {client.status}
             </Badge>
-            <GenerateButton clientId={id} />
+            <GenerateButton
+              clientId={id}
+              channels={integrationRows.filter((i) => i.status === 'connected').map((i) => ({
+                channel: i.channel as Channel,
+                label: listAdapters().find((a) => a.channel === i.channel)?.label ?? i.channel,
+              }))}
+            />
           </div>
         }
       />

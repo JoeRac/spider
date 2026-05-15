@@ -1,14 +1,16 @@
 import { Shell } from '@/components/shell';
 import { Page, PageHeader, Card, Empty, Badge, Dot, LinkButton } from '@/components/ui';
-import { Users, ArrowRight, Plug, Sparkles, CalendarClock, Search as SearchIcon, MapPin } from 'lucide-react';
+import { Users, ArrowRight, Plug, Sparkles, CalendarClock, Search as SearchIcon, MapPin, AlertTriangle, Eye } from 'lucide-react';
 import { db } from '@/lib/db';
 import {
   clients, integrations, contentItems, contentTargets, seoAudits, CHANNELS, type Channel,
 } from '@/lib/db/schema';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import Link from 'next/link';
 import { ImportFromBadgerButton } from './import-button';
 import { listAdapters } from '@/lib/channels/registry';
+import { computeClientHealth, healthTone, type ClientHealth } from '@/lib/client-health';
+import { autopilotFromClientSettings } from '@/lib/content/autopilot';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,15 +23,24 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   const rows = await loadClientCards();
   const filtered = applyFilter(rows, filter);
   const counts = computeFilterCounts(rows);
+  const attentionSummary = buildAttentionSummary(rows);
 
   return (
     <Shell>
       <PageHeader
         title="Clients"
-        subtitle="Every dealership Spider is managing. The default view surfaces the ones that need you first."
+        subtitle="Every dealership Spider is managing. Anything that needs you today is at the top."
         actions={<ImportFromBadgerButton />}
       />
       <Page>
+        {/* Attention strip — the old dashboard's attention queue, hoisted to
+            sit above the cards so this page is now the full morning briefing. */}
+        {attentionSummary.total > 0 && (
+          <div className="mb-5">
+            <AttentionStrip summary={attentionSummary} />
+          </div>
+        )}
+
         <FilterBar current={filter} counts={counts} />
 
         {filtered.length === 0 ? (
@@ -56,26 +67,105 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   Attention strip — the cross-client triage that used to live on the
+   dashboard. Replaced raw counts with one-liner buttons that jump to
+   the right filter or page.
+   ────────────────────────────────────────────────────────────────────────── */
+
+type AttentionSummary = {
+  total: number;
+  channelErrors: number;
+  reviewQueue: number;        // total drafts awaiting bless
+  lowSeo: number;
+  onboarding: number;
+};
+
+function AttentionStrip({ summary }: { summary: AttentionSummary }) {
+  return (
+    <Card className="overflow-hidden border-warn/30 bg-warn-soft/20">
+      <div className="px-5 py-3 border-b border-warn/30 bg-warn-soft/40 flex items-center gap-2">
+        <AlertTriangle size={14} className="text-warn" />
+        <span className="text-sm font-semibold text-fg">Needs attention</span>
+        <Badge tone="warn">{summary.total}</Badge>
+      </div>
+      <div className="px-2 py-2 grid grid-cols-2 md:grid-cols-4 gap-1">
+        <AttentionItem
+          href="/clients?filter=onboarding"
+          label="In onboarding"
+          count={summary.onboarding}
+          icon={<Users size={12} />}
+          tone="info"
+        />
+        <AttentionItem
+          href="/content?status=draft"
+          label="To review"
+          count={summary.reviewQueue}
+          icon={<Eye size={12} />}
+          tone="accent"
+        />
+        <AttentionItem
+          href="/clients?filter=attention"
+          label="Channel errors"
+          count={summary.channelErrors}
+          icon={<Plug size={12} />}
+          tone="err"
+        />
+        <AttentionItem
+          href="/seo"
+          label="Low SEO (under 70)"
+          count={summary.lowSeo}
+          icon={<SearchIcon size={12} />}
+          tone="warn"
+        />
+      </div>
+    </Card>
+  );
+}
+
+function AttentionItem({ href, label, count, icon, tone }: {
+  href: string; label: string; count: number; icon: React.ReactNode;
+  tone: 'info' | 'err' | 'warn' | 'accent';
+}) {
+  const muted = count === 0;
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-2 px-3 py-2 rounded-md hover:bg-bg/60 transition-colors ${muted ? 'opacity-60' : ''}`}
+    >
+      <span className={tone === 'err' ? 'text-err' : tone === 'warn' ? 'text-warn' : tone === 'accent' ? 'text-accent' : 'text-info'}>
+        {icon}
+      </span>
+      <span className="flex-1 text-xs font-medium text-fg truncate">{label}</span>
+      <Badge tone={muted ? 'neutral' : tone === 'accent' ? 'accent' : tone}>{count}</Badge>
+    </Link>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    The card — visual workshop entry per client.
    ────────────────────────────────────────────────────────────────────────── */
 
 function ClientCard({ row }: { row: ClientCardRow }) {
   const adapters = listAdapters();
-  const channelMap = new Map(row.channels.map((c) => [c.channel, c.status]));
-  const liveCount = row.channels.filter((c) => c.status === 'connected').length;
-  const erroredCount = row.channels.filter((c) => c.status === 'error' || c.status === 'expired').length;
+  const labelByChannel = new Map(adapters.map((a) => [a.channel, a.label]));
 
-  const attention = row.attention;
+  // Only show channels that have a row (configured). Slots that have
+  // never been touched aren't visual noise on the card.
+  const configuredChannels = row.channels;
+  const liveCount = configuredChannels.filter((c) => c.status === 'connected').length;
+  const erroredCount = configuredChannels.filter((c) => c.status === 'error' || c.status === 'expired').length;
+  const unconfiguredCount = CHANNELS.length - configuredChannels.length;
+
   const cardAccent =
-    attention === 'urgent' ? 'border-err/40' :
-    attention === 'needs-work' ? 'border-warn/40' :
-    attention === 'attention' ? 'border-info/40' :
+    row.attention === 'urgent' ? 'border-err/40' :
+    row.attention === 'needs-work' ? 'border-warn/40' :
+    row.attention === 'attention' ? 'border-info/40' :
     'border-border';
 
   return (
     <Card className={`overflow-hidden ${cardAccent}`} hoverable>
       <Link href={`/clients/${row.id}`} className="block">
-        {/* Header band */}
+        {/* Header band: name + health score + status */}
         <div className="px-5 pt-4 pb-3 border-b border-border bg-bg/30">
           <div className="flex items-start justify-between gap-3 mb-1.5">
             <div className="min-w-0">
@@ -87,10 +177,7 @@ function ClientCard({ row }: { row: ClientCardRow }) {
                 </div>
               )}
             </div>
-            <Badge tone={statusTone(row.status)}>
-              <Dot tone={statusTone(row.status)} />
-              {row.status}
-            </Badge>
+            <HealthBadge health={row.health} status={row.status} />
           </div>
           {row.attentionReasons.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -103,38 +190,54 @@ function ClientCard({ row }: { row: ClientCardRow }) {
           )}
         </div>
 
-        {/* Channel rail */}
+        {/* Channel rail — configured channels only + a tail count for the rest */}
         <div className="px-5 pt-3">
           <div className="text-[10px] uppercase tracking-wider text-faint font-semibold mb-2 flex items-center justify-between">
             <span className="inline-flex items-center gap-1"><Plug size={10} />Channels</span>
-            <span className="text-fg tabular-nums">{liveCount}/{CHANNELS.length}{erroredCount > 0 && <span className="text-err ml-1.5">· {erroredCount} err</span>}</span>
+            <span className="text-fg tabular-nums">
+              {liveCount}/{configuredChannels.length || '—'}
+              {erroredCount > 0 && <span className="text-err ml-1.5">· {erroredCount} err</span>}
+            </span>
           </div>
           <div className="flex flex-wrap gap-1">
-            {adapters.map((a) => {
-              const st = channelMap.get(a.channel);
-              const tone =
-                st === 'connected' ? 'bg-ok text-accent-fg' :
-                st === 'expired' || st === 'error' ? 'bg-err/20 text-err ring-1 ring-inset ring-err/30' :
-                'bg-subtle text-faint';
-              return (
-                <span
-                  key={a.channel}
-                  title={`${a.label}: ${st ?? 'disconnected'}`}
-                  className={`inline-flex items-center justify-center w-7 h-5 rounded text-[9px] font-semibold uppercase tracking-wide ${tone}`}
-                >
-                  {channelInitials(a.channel)}
-                </span>
-              );
-            })}
+            {configuredChannels.length === 0 ? (
+              <span className="text-[11px] text-faint italic">No channels yet — open the Channels tab to connect</span>
+            ) : (
+              <>
+                {configuredChannels.map((c) => {
+                  const tone =
+                    c.status === 'connected' ? 'bg-ok text-accent-fg' :
+                    c.status === 'expired' || c.status === 'error' ? 'bg-err/20 text-err ring-1 ring-inset ring-err/30' :
+                    'bg-subtle text-faint';
+                  return (
+                    <span
+                      key={c.channel}
+                      title={`${labelByChannel.get(c.channel) ?? c.channel}: ${c.status}`}
+                      className={`inline-flex items-center justify-center w-7 h-5 rounded text-[9px] font-semibold uppercase tracking-wide ${tone}`}
+                    >
+                      {channelInitials(c.channel)}
+                    </span>
+                  );
+                })}
+                {unconfiguredCount > 0 && (
+                  <span
+                    title={`${unconfiguredCount} other channel${unconfiguredCount === 1 ? '' : 's'} available — not connected`}
+                    className="inline-flex items-center justify-center px-1.5 h-5 rounded text-[9px] font-semibold uppercase tracking-wide bg-subtle text-faint"
+                  >
+                    +{unconfiguredCount}
+                  </span>
+                )}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Stats row */}
+        {/* Stats row — review-first */}
         <div className="px-5 pt-4 pb-3 grid grid-cols-4 gap-3">
-          <Stat icon={<Sparkles size={11} />} label="Drafts"    value={row.draftCount} tone="neutral" />
+          <Stat icon={<Eye size={11} />} label="Review" value={row.draftCount} tone={row.draftCount > 0 ? 'accent' : 'neutral'} />
           <Stat icon={<CalendarClock size={11} />} label="Sched" value={row.scheduledCount} tone="info" />
-          <Stat icon={<ArrowRight size={11} />} label="Pub"      value={row.publishedCount} tone="ok" />
-          <Stat icon={<SearchIcon size={11} />} label="SEO"      value={row.seoScore != null ? row.seoScore : '—'} tone={row.seoScore == null ? 'neutral' : row.seoScore >= 70 ? 'ok' : row.seoScore >= 50 ? 'warn' : 'err'} />
+          <Stat icon={<ArrowRight size={11} />} label="Pub"   value={row.publishedCount} tone="ok" />
+          <Stat icon={<SearchIcon size={11} />} label="SEO"   value={row.seoScore != null ? row.seoScore : '—'} tone={row.seoScore == null ? 'neutral' : row.seoScore >= 70 ? 'ok' : row.seoScore >= 50 ? 'warn' : 'err'} />
         </div>
 
         {/* Footer line */}
@@ -151,17 +254,44 @@ function ClientCard({ row }: { row: ClientCardRow }) {
   );
 }
 
+function HealthBadge({ health, status }: { health: ClientHealth; status: string }) {
+  const tone = healthTone(health.label);
+  const dot =
+    status === 'archived' ? 'neutral' :
+    status === 'paused' ? 'warn' :
+    status === 'onboarding' ? 'info' :
+    tone;
+  return (
+    <div className="flex items-center gap-2">
+      <Badge tone={dot as 'ok' | 'warn' | 'err' | 'info' | 'neutral'}>
+        <Dot tone={dot as 'ok' | 'warn' | 'err' | 'info' | 'neutral'} />
+        {status}
+      </Badge>
+      <div className="text-right" title={`Channels ${health.factors.channels} · Velocity ${health.factors.velocity} · SEO ${health.factors.seo} · Autopilot ${health.factors.autopilot}`}>
+        <div className="text-[9px] uppercase tracking-wider text-faint font-semibold">Health</div>
+        <div className={`text-base font-semibold tabular-nums leading-none ${
+          tone === 'ok' ? 'text-ok' :
+          tone === 'warn' ? 'text-warn' :
+          tone === 'err' ? 'text-err' :
+          'text-muted'
+        }`}>{health.score}</div>
+      </div>
+    </div>
+  );
+}
+
 function Stat({ icon, label, value, tone }: {
   icon: React.ReactNode;
   label: string;
   value: number | string;
-  tone: 'ok' | 'warn' | 'err' | 'info' | 'neutral';
+  tone: 'ok' | 'warn' | 'err' | 'info' | 'neutral' | 'accent';
 }) {
   const color =
     tone === 'ok' ? 'text-ok' :
     tone === 'warn' ? 'text-warn' :
     tone === 'err' ? 'text-err' :
     tone === 'info' ? 'text-info' :
+    tone === 'accent' ? 'text-accent' :
     'text-fg';
   return (
     <div>
@@ -229,19 +359,20 @@ type ClientCardRow = {
   attention: 'urgent' | 'needs-work' | 'attention' | 'ok';
   attentionReasons: string[];
   importedAt: Date;
+  health: ClientHealth;
 };
 
 async function loadClientCards(): Promise<ClientCardRow[]> {
-  // One pass: all clients.
   const clientRows = await db.select().from(clients).orderBy(desc(clients.importedAt)).limit(500);
   if (clientRows.length === 0) return [];
   const ids = clientRows.map((c) => c.id);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  // Parallel aggregate queries.
   const [
     integrationRows,
     contentCountRows,
     latestPublishedRows,
+    publishedLast30Rows,
     auditRows,
   ] = await Promise.all([
     db.select({ clientId: integrations.clientId, channel: integrations.channel, status: integrations.status })
@@ -256,7 +387,6 @@ async function loadClientCards(): Promise<ClientCardRow[]> {
       .where(inArray(contentItems.clientId, ids))
       .groupBy(contentItems.clientId, contentItems.status),
 
-    // Most recent successful publish per client — pull then reduce in JS.
     db.select({
       clientId: contentItems.clientId,
       publishedAt: contentTargets.publishedAt,
@@ -269,7 +399,21 @@ async function loadClientCards(): Promise<ClientCardRow[]> {
       .orderBy(desc(contentTargets.publishedAt))
       .limit(2000),
 
-    // Latest audit score per client — pull and reduce.
+    // Publishes per client in the last 30 days — feeds the velocity factor
+    // of the health score.
+    db.select({
+      clientId: contentItems.clientId,
+      n: sql<number>`count(*)::int`,
+    })
+      .from(contentTargets)
+      .innerJoin(contentItems, eq(contentItems.id, contentTargets.contentItemId))
+      .where(and(
+        inArray(contentItems.clientId, ids),
+        eq(contentTargets.status, 'published'),
+        gte(contentTargets.publishedAt, thirtyDaysAgo),
+      ))
+      .groupBy(contentItems.clientId),
+
     db.select({
       clientId: seoAudits.clientId,
       score: seoAudits.score,
@@ -280,7 +424,6 @@ async function loadClientCards(): Promise<ClientCardRow[]> {
       .orderBy(desc(seoAudits.createdAt)),
   ]);
 
-  // Build per-client lookups.
   const channelsByClient = new Map<string, ChannelStatus[]>();
   for (const r of integrationRows) {
     const arr = channelsByClient.get(r.clientId) ?? [];
@@ -302,12 +445,14 @@ async function loadClientCards(): Promise<ClientCardRow[]> {
     }
   }
 
+  const last30ByClient = new Map<string, number>();
+  for (const r of publishedLast30Rows) last30ByClient.set(r.clientId, r.n);
+
   const seoByClient = new Map<string, number>();
   for (const r of auditRows) {
     if (!seoByClient.has(r.clientId)) seoByClient.set(r.clientId, r.score);
   }
 
-  // Compose.
   return clientRows.map((c) => {
     const channels = channelsByClient.get(c.id) ?? [];
     const counts = countsByClient.get(c.id) ?? {};
@@ -318,18 +463,28 @@ async function loadClientCards(): Promise<ClientCardRow[]> {
     const draftCount = counts.draft ?? 0;
     const scheduledCount = counts.scheduled ?? 0;
     const publishedCount = counts.published ?? 0;
+    const policy = autopilotFromClientSettings(c.settings);
+    const publishedLast30 = last30ByClient.get(c.id) ?? 0;
 
     const attentionReasons: string[] = [];
     if (erroredCount > 0) attentionReasons.push(`${erroredCount} channel error`);
     if (c.status === 'onboarding') attentionReasons.push('onboarding');
     if (c.status === 'active' && liveCount === 0) attentionReasons.push('no channels live');
-    if (c.status === 'active' && draftCount > 5) attentionReasons.push(`${draftCount} drafts pending`);
+    if (c.status === 'active' && draftCount > 5) attentionReasons.push(`${draftCount} to review`);
     if (seoScore != null && seoScore < 70) attentionReasons.push(`SEO ${seoScore}`);
 
     const attention: ClientCardRow['attention'] =
       erroredCount > 0 ? 'urgent' :
       (seoScore != null && seoScore < 50) ? 'needs-work' :
       attentionReasons.length > 0 ? 'attention' : 'ok';
+
+    const health = computeClientHealth({
+      status: c.status,
+      autopilotMode: policy.mode,
+      connectedChannels: liveCount,
+      publishedLast30d: publishedLast30,
+      seoScore,
+    });
 
     return {
       id: c.id,
@@ -347,6 +502,7 @@ async function loadClientCards(): Promise<ClientCardRow[]> {
       attention,
       attentionReasons,
       importedAt: c.importedAt as Date,
+      health,
     };
   });
 }
@@ -374,16 +530,27 @@ function computeFilterCounts(rows: ClientCardRow[]): Record<StatusFilter, number
   };
 }
 
+function buildAttentionSummary(rows: ClientCardRow[]): AttentionSummary {
+  let channelErrors = 0;
+  let reviewQueue = 0;
+  let lowSeo = 0;
+  let onboarding = 0;
+  for (const r of rows) {
+    if (r.status === 'archived') continue;
+    if (r.channels.some((c) => c.status === 'error' || c.status === 'expired')) channelErrors += 1;
+    reviewQueue += r.draftCount;
+    if (r.seoScore != null && r.seoScore < 70) lowSeo += 1;
+    if (r.status === 'onboarding') onboarding += 1;
+  }
+  return {
+    total: channelErrors + reviewQueue + lowSeo + onboarding,
+    channelErrors, reviewQueue, lowSeo, onboarding,
+  };
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    Helpers
    ────────────────────────────────────────────────────────────────────────── */
-
-function statusTone(status: string): 'ok' | 'warn' | 'err' | 'info' | 'neutral' | 'accent' {
-  if (status === 'active') return 'ok';
-  if (status === 'onboarding') return 'info';
-  if (status === 'paused') return 'warn';
-  return 'neutral';
-}
 
 function channelInitials(channel: string): string {
   switch (channel) {
@@ -411,5 +578,4 @@ function relative(d: Date): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-// LinkButton is exported for future use; suppress unused-export warnings via use.
-void LinkButton;
+void LinkButton; void Sparkles; void lt;

@@ -1,12 +1,23 @@
 'use client';
-import { useState } from 'react';
+/**
+ * Generation console — channel-first.
+ *
+ * The operator picks a client + a channel; we infer the right content
+ * kind from `kindForChannel`. This matches how the work is actually
+ * requested ("I want a Twitter post for Phoenix") rather than our
+ * internal kind vocabulary.
+ */
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, CardHeader, FieldGroup, Input, Select, Textarea, Spinner } from '@/components/ui';
 import { Sparkles } from 'lucide-react';
-import { CONTENT_KINDS, TEMPLATES, type ContentKind } from '@/lib/content/templates';
+import { kindForChannel, generateActionLabel } from '@/lib/content/channel-to-kind';
+import type { Channel } from '@/lib/db/schema';
 import Link from 'next/link';
 
-type ClientOption = { id: string; name: string };
+type ClientChannel = { channel: Channel; label: string };
+type ClientOption = { id: string; name: string; channels: ClientChannel[] };
+
 type Outcome = {
   runId: string;
   status: 'completed' | 'failed';
@@ -15,10 +26,26 @@ type Outcome = {
   error?: string;
 };
 
-export function GenerationConsole({ clients, disabled, defaultModel }: { clients: ClientOption[]; disabled: boolean; defaultModel: string }) {
+export function GenerationConsole({
+  clients, disabled, defaultModel,
+}: {
+  clients: ClientOption[];
+  disabled: boolean;
+  defaultModel: string;
+}) {
   const router = useRouter();
   const [clientId, setClientId] = useState(clients[0]?.id ?? '');
-  const [kind, setKind] = useState<ContentKind>('post');
+  const selectedClient = useMemo(() => clients.find((c) => c.id === clientId) ?? null, [clientId, clients]);
+
+  const firstChannel = (selectedClient?.channels[0]?.channel ?? 'google_my_business') as Channel;
+  const [channel, setChannel] = useState<Channel>(firstChannel);
+
+  useEffect(() => {
+    const next = selectedClient?.channels[0]?.channel as Channel | undefined;
+    if (next && next !== channel) setChannel(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
+
   const [quantity, setQuantity] = useState(3);
   const [brief, setBrief] = useState('');
   const [model, setModel] = useState(defaultModel);
@@ -27,7 +54,9 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const template = TEMPLATES[kind];
+  const inferredKind = kindForChannel(channel);
+  const actionLabel = generateActionLabel(channel);
+  const channelOptions = selectedClient?.channels ?? [];
 
   async function fire() {
     if (!clientId) { setError('Pick a client first.'); return; }
@@ -38,7 +67,14 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
       const res = await fetch('/api/content/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ clientId, kind, quantity, brief: brief || undefined, model: model !== defaultModel ? model : undefined, withVariants }),
+        body: JSON.stringify({
+          clientId,
+          kind: inferredKind,
+          quantity,
+          brief: brief || undefined,
+          model: model !== defaultModel ? model : undefined,
+          withVariants,
+        }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json?.error ?? `Failed (${res.status})`); return; }
@@ -49,7 +85,7 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
 
   return (
     <Card>
-      <CardHeader title="Generate" subtitle={`Template: ${template.label} · ${template.targetLength}`} />
+      <CardHeader title="Generate" subtitle={`Pick a channel and we'll spin up the right kind of content (${actionLabel}).`} />
       <div className="p-5 space-y-4">
         <FieldGroup label="Client">
           <Select value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={disabled || clients.length === 0}>
@@ -59,9 +95,11 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
         </FieldGroup>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FieldGroup label="Kind">
-            <Select value={kind} onChange={(e) => setKind(e.target.value as ContentKind)} disabled={disabled}>
-              {CONTENT_KINDS.map((k) => <option key={k} value={k}>{TEMPLATES[k].label}</option>)}
+          <FieldGroup label="Channel" hint={channelOptions.length === 0 ? 'No live channels on this client' : `→ generates a ${actionLabel}`}>
+            <Select value={channel} onChange={(e) => setChannel(e.target.value as Channel)} disabled={disabled || channelOptions.length === 0}>
+              {channelOptions.length === 0
+                ? <option value="">No connected channels</option>
+                : channelOptions.map((c) => <option key={c.channel} value={c.channel}>{c.label}</option>)}
             </Select>
           </FieldGroup>
           <FieldGroup label="Quantity" hint="1 – 10">
@@ -118,7 +156,7 @@ export function GenerationConsole({ clients, disabled, defaultModel }: { clients
         )}
 
         <div className="flex justify-end">
-          <Button variant="primary" onClick={fire} disabled={disabled || busy || !clientId}>
+          <Button variant="primary" onClick={fire} disabled={disabled || busy || !clientId || channelOptions.length === 0}>
             {busy ? <Spinner size={14} /> : <Sparkles size={14} />}
             Generate
           </Button>

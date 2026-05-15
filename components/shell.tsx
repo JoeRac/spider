@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { SectionLabel } from './ui';
 import {
-  LayoutDashboard, Users, FileText,
+  Users, FileText,
   BookOpen, Search, BarChart3, Server,
   PanelLeftClose, PanelLeftOpen, Menu, X as XIcon,
   Search as SearchIcon,
@@ -26,13 +26,7 @@ const NAV: NavSection[] = [
   {
     label: 'Workspace',
     items: [
-      { href: '/',          label: 'Dashboard',  icon: LayoutDashboard },
-      { href: '/clients',   label: 'Clients',    icon: Users },
-    ],
-  },
-  {
-    label: 'Content',
-    items: [
+      { href: '/clients', label: 'Clients', icon: Users },
       { href: '/content', label: 'Content', icon: FileText },
     ],
   },
