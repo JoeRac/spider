@@ -36,9 +36,9 @@ type Item = {
 const STATIC_NAV: Item[] = [
   { key: 'nav:dashboard',  section: 'Navigation', label: 'Dashboard',       href: '/',           icon: <LayoutDashboard size={14} /> },
   { key: 'nav:clients',    section: 'Navigation', label: 'Clients',         href: '/clients',    icon: <Users size={14} /> },
-  { key: 'nav:content',    section: 'Navigation', label: 'Content library', href: '/content',    icon: <FileText size={14} /> },
-  { key: 'nav:generation', section: 'Navigation', label: 'Generation',      href: '/generation', icon: <Sparkles size={14} /> },
-  { key: 'nav:schedule',   section: 'Navigation', label: 'Schedule',        href: '/schedule',   icon: <CalendarClock size={14} /> },
+  { key: 'nav:content',          section: 'Navigation', label: 'Content',          href: '/content',                  icon: <FileText size={14} /> },
+  { key: 'nav:content-calendar', section: 'Navigation', label: 'Content calendar', href: '/content?view=calendar',    icon: <CalendarClock size={14} /> },
+  { key: 'nav:content-generate', section: 'Navigation', label: 'Generate content', href: '/content?view=generate',    icon: <Sparkles size={14} /> },
   { key: 'nav:seo',        section: 'Navigation', label: 'SEO',             href: '/seo',        icon: <SearchIcon size={14} /> },
   { key: 'nav:analytics',  section: 'Navigation', label: 'Analytics',       href: '/analytics',  icon: <BarChart3 size={14} /> },
   { key: 'nav:system',     section: 'Navigation', label: 'System',          href: '/system',     icon: <Server size={14} /> },

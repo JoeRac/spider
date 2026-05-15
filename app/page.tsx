@@ -290,7 +290,7 @@ export default async function DashboardPage() {
               <CardHeader
                 title="Going out next 24h"
                 subtitle="Scheduled content the cron will publish."
-                action={<Link href="/schedule" className="text-xs text-muted hover:text-fg">Full →</Link>}
+                action={<Link href="/content?view=calendar" className="text-xs text-muted hover:text-fg">Calendar →</Link>}
               />
               {data.upcomingList.length === 0 ? (
                 <div className="p-5">

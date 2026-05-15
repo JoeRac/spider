@@ -16,13 +16,14 @@
  * acts as a soft lock.
  */
 import { db } from '@/lib/db';
-import { contentItems, contentTargets, integrations, type Channel } from '@/lib/db/schema';
+import { clients, contentItems, contentTargets, integrations, type Channel } from '@/lib/db/schema';
 import { eq, and, lte, isNull, or, lt, ne } from 'drizzle-orm';
 import { decryptJSON } from '@/lib/crypto';
 import { getPublisher } from './registry';
 import { getAdapter } from '@/lib/channels/registry';
 import { pingIndexNow } from '@/lib/seo/indexnow';
 import { silverbackEnqueueForClient, spiderContentDeepLink } from '@/lib/integrations/silverback';
+import { autopilotFromClientSettings, shouldPublish } from '@/lib/content/autopilot';
 
 const MAX_ATTEMPTS = 4;
 const BATCH_SIZE = 25;
@@ -36,16 +37,21 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
   // Pull due rows. A target is due when:
   //   - status='pending', and
   //   - the parent content_item is 'scheduled', and
-  //   - the item's scheduled_for <= now (or null = ASAP).
+  //   - the item's scheduled_for <= now (or null = ASAP), and
+  //   - the integration isn't disconnected, and
+  //   - the parent client isn't paused/archived (gate enforced
+  //     in-app below so we get a clean log entry for skipped rows).
   const due = await db
     .select({
       target: contentTargets,
       item: contentItems,
       integration: integrations,
+      client: clients,
     })
     .from(contentTargets)
     .innerJoin(contentItems, eq(contentItems.id, contentTargets.contentItemId))
     .innerJoin(integrations, eq(integrations.id, contentTargets.integrationId))
+    .innerJoin(clients, eq(clients.id, contentItems.clientId))
     .where(and(
       eq(contentTargets.status, 'pending'),
       eq(contentItems.status, 'scheduled'),
@@ -59,6 +65,20 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
   let skipped = 0;
 
   for (const row of due) {
+    // Autopilot / client-status gate. We honor it inline (rather than
+    // in the SQL where clause) so we have a row to leave a sensible
+    // lastError on, and re-attempts kick in automatically once the
+    // client comes back from paused.
+    const policy = autopilotFromClientSettings(row.client.settings);
+    if (!shouldPublish(row.client.status, policy)) {
+      await db.update(contentTargets).set({
+        lastError: `client gated: status=${row.client.status} autopilot=${policy.mode}`,
+        updatedAt: new Date(),
+      }).where(eq(contentTargets.id, row.target.id));
+      skipped += 1;
+      continue;
+    }
+
     // Optimistic lock: flip to 'publishing' so re-entrant cron doesn't
     // pick the same row up twice. If the update affects 0 rows another
     // worker beat us — skip.

@@ -52,6 +52,7 @@ export type ComposerItem = {
   status: Status;
   scheduledFor: string | null;
   variants: Record<string, string>;
+  campaign: string | null;
 };
 
 const CHANNEL_LIMITS: Record<string, number | undefined> = {
@@ -83,6 +84,7 @@ export function Composer({
   const [canonical, setCanonical] = useState(item.body);
   const [variants, setVariants] = useState<Record<string, string>>(item.variants ?? {});
   const [canonicalOpen, setCanonicalOpen] = useState(Object.keys(item.variants).length === 0);
+  const [campaign, setCampaign] = useState(item.campaign ?? '');
 
   /* ───── Save state ───── */
   const [busy, setBusy] = useState<null | 'save' | 'archive' | 'delete'>(null);
@@ -90,7 +92,7 @@ export function Composer({
   const dirty = useRef(false);
 
   // Mark dirty when any state changes after first paint.
-  useEffect(() => { dirty.current = true; }, [title, status, scheduledFor, canonical, variants]);
+  useEffect(() => { dirty.current = true; }, [title, status, scheduledFor, canonical, variants, campaign]);
 
   async function save(extra: Partial<{ status: Status }> = {}, kind: 'save' | 'archive' = 'save') {
     setBusy(kind);
@@ -104,7 +106,7 @@ export function Composer({
           body: canonical,
           status: extra.status ?? status,
           scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
-          metadataPatch: { variants },
+          metadataPatch: { variants, campaign: campaign.trim() || null },
         }),
       });
       const json = await res.json();
@@ -162,7 +164,7 @@ export function Composer({
       />
 
       {/* Metadata bar — title, status, schedule */}
-      <div className="px-5 py-4 border-b border-border bg-bg/40">
+      <div className="px-5 py-4 border-b border-border bg-bg/40 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_180px_220px] gap-3 items-end">
           <label className="block">
             <span className="block text-xs font-medium text-fg mb-1.5">Title</span>
@@ -190,7 +192,15 @@ export function Composer({
             />
           </label>
         </div>
-        {message && <div className="text-xs text-muted mt-3">{message}</div>}
+        <label className="block">
+          <span className="block text-xs font-medium text-fg mb-1.5">Campaign <span className="text-muted font-normal">— group related content across clients</span></span>
+          <Input
+            value={campaign}
+            onChange={(e) => setCampaign(e.target.value)}
+            placeholder="e.g. summer-sale-2026"
+          />
+        </label>
+        {message && <div className="text-xs text-muted">{message}</div>}
       </div>
 
       {/* Per-channel variants — primary surface */}

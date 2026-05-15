@@ -58,6 +58,7 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
 
   const meta = (item.metadata as Record<string, unknown>) ?? {};
   const variants = ((meta.variants as Record<string, string> | undefined) ?? {});
+  const campaign = (meta.campaign as string | undefined) ?? null;
 
   const composerItem: ComposerItem = {
     id: item.id,
@@ -67,6 +68,7 @@ export default async function ContentDetailPage({ params }: { params: Promise<{ 
     status: item.status as ComposerItem['status'],
     scheduledFor: item.scheduledFor ? new Date(item.scheduledFor).toISOString() : null,
     variants,
+    campaign,
   };
 
   const channelsForComposer = clientIntegrations.map((i) => ({

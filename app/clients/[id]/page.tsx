@@ -20,8 +20,12 @@ import { SeoPanel } from './seo-panel';
 import { CitationsCard } from './citations-card';
 import { SitemapCard } from './sitemap-card';
 import { OnboardingChecklist, type OnboardingStep } from './onboarding-checklist';
+import { AutopilotCard } from './autopilot-card';
+import { JsonLdCard } from './jsonld-card';
 import { getProfile, latestAudit } from '@/lib/seo/audit';
 import { CITATION_DIRECTORIES } from '@/lib/seo/citations';
+import { buildClientJsonLd, jsonLdToScriptTag } from '@/lib/seo/jsonld';
+import { autopilotFromClientSettings } from '@/lib/content/autopilot';
 import { ClientTabBar, type ClientTab } from './tab-bar';
 
 export const dynamic = 'force-dynamic';
@@ -235,6 +239,19 @@ async function OverviewTab({ clientId, client, integrationRows }: {
         </Card>
       </div>
 
+      <div className="mt-6">
+        <AutopilotCard
+          clientId={clientId}
+          clientStatus={client.status}
+          initial={autopilotFromClientSettings(client.settings)}
+          channels={integrationRows.map((i) => ({
+            channel: i.channel,
+            label: listAdapters().find((a) => a.channel === i.channel)?.label ?? i.channel,
+            status: i.status,
+          }))}
+        />
+      </div>
+
       {latest && (
         <div className="mt-6">
           <SectionLabel className="mb-2">SEO snapshot</SectionLabel>
@@ -355,11 +372,12 @@ async function ContentTab({ clientId, client }: { clientId: string; client: type
 }
 
 async function SeoTab({ clientId, client }: { clientId: string; client: typeof clients.$inferSelect }) {
-  const [profile, audit, citationRows, sitemapRows] = await Promise.all([
+  const [profile, audit, citationRows, sitemapRows, integrationRows] = await Promise.all([
     getProfile(clientId),
     latestAudit(clientId),
     db.select().from(seoCitations).where(eq(seoCitations.clientId, clientId)),
     db.select().from(seoSitemaps).where(eq(seoSitemaps.clientId, clientId)).orderBy(desc(seoSitemaps.fetchedAt)).limit(20),
+    db.select().from(integrations).where(eq(integrations.clientId, clientId)),
   ]);
 
   const citationByKey = new Map(citationRows.map((r) => [r.directoryKey, r]));
@@ -372,6 +390,10 @@ async function SeoTab({ clientId, client }: { clientId: string; client: typeof c
       notes: row?.notes ?? null,
     };
   });
+
+  const jsonLd = buildClientJsonLd(client, profile, integrationRows);
+  const scriptTag = jsonLdToScriptTag(jsonLd);
+  const rawJson = JSON.stringify(jsonLd, null, 2);
 
   return (
     <>
@@ -408,6 +430,10 @@ async function SeoTab({ clientId, client }: { clientId: string; client: typeof c
             fetchedAt: new Date(s.fetchedAt).toISOString(),
           }))}
         />
+      </div>
+
+      <div className="mt-6">
+        <JsonLdCard scriptTag={scriptTag} rawJson={rawJson} />
       </div>
     </>
   );
