@@ -54,11 +54,11 @@ export default async function SeoPage() {
           <Empty
             icon={<Search size={28} />}
             title="No SEO profiles yet"
-            hint="Open a client and fill in the SEO panel (site URL, keywords, location) to start running audits."
+            hint="Open a lead and fill in the SEO panel (site URL, keywords, location) to start running audits."
           />
         ) : (
           <Card>
-            <CardHeader title="Clients" subtitle="Latest audit per client. Click through to drill in." />
+            <CardHeader title="Leads" subtitle="Latest audit per lead. Click through to drill in." />
             <ul className="divide-y divide-border">
               {enriched.map((e) => {
                 const score = e.audit?.score ?? null;

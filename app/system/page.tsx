@@ -90,7 +90,7 @@ export default async function SystemPage() {
       <Page>
         {/* Top: health + autopilot stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatTile label="Active clients" value={activeClientCount?.n ?? 0} icon={<Plug size={14} />} />
+          <StatTile label="Active leads"   value={activeClientCount?.n ?? 0} icon={<Plug size={14} />} />
           <StatTile label="Drafts"         value={draftCount?.n ?? 0}        hint="Awaiting review" icon={<Sparkles size={14} />} />
           <StatTile label="Scheduled"      value={scheduledCount?.n ?? 0}    tone="info" hint="Queued for publish" icon={<Clock size={14} />} />
           <StatTile label="Failed targets" value={failedTargetCount?.n ?? 0} tone={failedTargetCount?.n ? 'err' : 'ok'} hint="After 4 attempts" icon={<BarChart3 size={14} />} />

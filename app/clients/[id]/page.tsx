@@ -90,7 +90,7 @@ export default async function ClientDetailPage({ params, searchParams }: {
   return (
     <Shell>
       <PageHeader
-        breadcrumbs={[{ label: 'Clients', href: '/clients' }, { label: client.name }]}
+        breadcrumbs={[{ label: 'Leads', href: '/clients' }, { label: client.name }]}
         title={client.name}
         subtitle={[client.addressCity, client.addressState].filter(Boolean).join(', ') || undefined}
         actions={

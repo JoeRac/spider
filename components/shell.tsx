@@ -26,7 +26,7 @@ const NAV: NavSection[] = [
   {
     label: 'Workspace',
     items: [
-      { href: '/clients', label: 'Clients', icon: Users },
+      { href: '/clients', label: 'Leads', icon: Users },
       { href: '/content', label: 'Content', icon: FileText },
     ],
   },

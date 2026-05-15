@@ -59,7 +59,7 @@ export function GenerationConsole({
   const channelOptions = selectedClient?.channels ?? [];
 
   async function fire() {
-    if (!clientId) { setError('Pick a client first.'); return; }
+    if (!clientId) { setError('Pick a lead first.'); return; }
     setBusy(true);
     setError(null);
     setOutcome(null);
@@ -87,15 +87,15 @@ export function GenerationConsole({
     <Card>
       <CardHeader title="Generate" subtitle={`Pick a channel and we'll spin up the right kind of content (${actionLabel}).`} />
       <div className="p-5 space-y-4">
-        <FieldGroup label="Client">
+        <FieldGroup label="Lead">
           <Select value={clientId} onChange={(e) => setClientId(e.target.value)} disabled={disabled || clients.length === 0}>
-            {clients.length === 0 && <option value="">No clients yet — import from Badger</option>}
+            {clients.length === 0 && <option value="">No leads yet — import from Badger</option>}
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
         </FieldGroup>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FieldGroup label="Channel" hint={channelOptions.length === 0 ? 'No live channels on this client' : `→ generates a ${actionLabel}`}>
+          <FieldGroup label="Channel" hint={channelOptions.length === 0 ? 'No live channels on this lead' : `→ generates a ${actionLabel}`}>
             <Select value={channel} onChange={(e) => setChannel(e.target.value as Channel)} disabled={disabled || channelOptions.length === 0}>
               {channelOptions.length === 0
                 ? <option value="">No connected channels</option>

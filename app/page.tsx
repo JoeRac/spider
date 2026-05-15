@@ -164,14 +164,14 @@ export default async function DashboardPage() {
     <Shell>
       <PageHeader
         title="Spider"
-        subtitle="One workspace per agency client. Below: what's blocking, what's queued, and what just shipped."
+        subtitle="One workspace per lead. Below: what's blocking, what's queued, and what just shipped."
         eyebrow="Dashboard"
       />
       <Page>
         {/* Orientation tiles */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <StatTile label="Clients"            value={counts.clients}      hint={`${counts.active} active · ${counts.onboarding} onboarding`} icon={<Users size={14} />} />
-          <StatTile label="Channels connected" value={counts.channels}     hint="Across all clients" tone="info" icon={<Plug size={14} />} />
+          <StatTile label="Leads"              value={counts.clients}      hint={`${counts.active} active · ${counts.onboarding} onboarding`} icon={<Users size={14} />} />
+          <StatTile label="Channels connected" value={counts.channels}     hint="Across all leads" tone="info" icon={<Plug size={14} />} />
           <StatTile label="Queued content"     value={counts.drafts + counts.scheduled} hint={`${counts.drafts} draft · ${counts.scheduled} scheduled`} tone="accent" icon={<Sparkles size={14} />} />
           <StatTile label="Published"          value={counts.published}    hint="All time" tone="ok" icon={<FileText size={14} />} />
         </div>
@@ -187,9 +187,9 @@ export default async function DashboardPage() {
               <AttentionGroup
                 icon={<Users size={14} />}
                 tone="info"
-                label="Clients in onboarding"
+                label="Leads in onboarding"
                 count={counts.onboarding}
-                emptyHint="Every client is set up and active."
+                emptyHint="Every lead is set up and active."
               >
                 {data.onboardingList.map((c) => (
                   <Link key={c.id} href={`/clients/${c.id}`} className="block px-5 py-2 hover:bg-subtle/40 transition-colors">

@@ -28,7 +28,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
   return (
     <Shell>
       <PageHeader
-        title="Clients"
+        title="Leads"
         subtitle="Every dealership Spider is managing. Anything that needs you today is at the top."
         actions={<ImportFromBadgerButton />}
       />
