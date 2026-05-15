@@ -24,6 +24,7 @@ import { getAdapter } from '@/lib/channels/registry';
 import { pingIndexNow } from '@/lib/seo/indexnow';
 import { silverbackEnqueueForClient, spiderContentDeepLink } from '@/lib/integrations/silverback';
 import { autopilotFromClientSettings, shouldPublish } from '@/lib/content/autopilot';
+import { notify } from '@/lib/notify';
 
 const MAX_ATTEMPTS = 4;
 const BATCH_SIZE = 25;
@@ -180,6 +181,19 @@ export async function publishDueTargets(now: Date = new Date()): Promise<{
           deep_link: spiderContentDeepLink(row.item.id),
           actor: 'cron:publisher',
           idempotency_key: `spider:content.failed:${row.target.id}`,
+        });
+        /* Plus a Slack alert via Silverback notifications so the
+         * operator hears about it in the alerts channel, not just on
+         * a dossier they may not be looking at. Idempotency at the
+         * target level mirrors the timeline event — one terminal
+         * failure, one alert. */
+        await notify({
+          severity: 'warn',
+          title: `Publish failed: ${row.item.kind} on ${row.integration.channel} for ${row.client.name}`,
+          body: `${message.slice(0, 300)} (after ${row.target.attempts + 1} attempts)`,
+          tags: ['publish-failure', row.integration.channel],
+          deepLink: spiderContentDeepLink(row.item.id),
+          idempotencyKey: `spider:publish-failed:${row.target.id}`,
         });
       }
     }

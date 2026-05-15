@@ -19,6 +19,8 @@ import { zaiChatJSON, estimateCostCents } from '@/lib/zai';
 import { TEMPLATES, generationOutputSchema, type ContentKind } from './templates';
 import { voiceFromClientSettings, voiceToSystemPrompt } from './voice';
 import { getAdapter } from '@/lib/channels/registry';
+import { getAiConfig } from '@/lib/ai-config';
+import { notify } from '@/lib/notify';
 
 export type GenerateInput = {
   clientId: string;
@@ -50,13 +52,19 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
 
   const { systemPrompt, userPrompt } = buildPrompts(client, template, quantity, input.brief);
 
+  /* Resolve the model. Explicit input.model wins; otherwise fetch the
+   * (spider, content-draft.<kind>) assignment from Silverback. Falls
+   * back to the AI config's default if Silverback is unreachable. */
+  const cfg = await getAiConfig(`content-draft.${input.kind}`);
+  const resolvedModel = input.model ?? cfg.model;
+
   // Persist a "pending" run up front so we always have a row to attach
   // errors to even if the LLM call itself blows up.
   const [run] = await db.insert(generationRuns).values({
     clientId: client.id,
     template: input.kind,
     prompt: `${systemPrompt}\n\n---\n\n${userPrompt}`,
-    model: input.model ?? null,
+    model: resolvedModel,
     status: 'pending',
   }).returning();
   if (!run) throw new Error('Failed to record generation run');
@@ -64,13 +72,13 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
   try {
     const { data, usage, model, text } = await zaiChatJSON({
       schema: generationOutputSchema,
-      model: input.model,
+      model: resolvedModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.8,
-      maxTokens: 2000,
+      temperature: cfg.temperature ?? 0.8,
+      maxTokens: cfg.maxTokens ?? 2000,
     });
 
     const costCents = estimateCostCents(usage);
@@ -141,6 +149,17 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Generation failed';
     await db.update(generationRuns).set({ status: 'failed', error: message }).where(eq(generationRuns.id, run.id));
+    /* Alert the operator. Hourly idempotency bucket per (client, kind,
+     * hour) so a repeating client-prompt issue produces one alert per
+     * hour rather than one per failed attempt. */
+    const hourBucket = Math.floor(Date.now() / (60 * 60 * 1000));
+    await notify({
+      severity: 'warn',
+      title: `Content generation failed for ${client.name}`,
+      body: `kind=${input.kind} · model=${resolvedModel} · ${message.slice(0, 200)}`,
+      tags: ['ai-failure', 'content-draft'],
+      idempotencyKey: `spider:ai-failure:content-draft:${client.id}:${input.kind}:${hourBucket}`,
+    });
     return { runId: run.id, status: 'failed', itemIds: [], error: message };
   }
 }
