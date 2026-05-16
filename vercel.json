@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/publish",
-      "schedule": "*/10 * * * *"
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/generate-daily",
@@ -11,7 +11,7 @@
     },
     {
       "path": "/api/cron/refresh-metrics",
-      "schedule": "0 */6 * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/sitemap-refresh",
@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/cron/silverback-drain",
-      "schedule": "*/3 * * * *"
+      "schedule": "* * * * *"
     }
   ],
   "headers": [
