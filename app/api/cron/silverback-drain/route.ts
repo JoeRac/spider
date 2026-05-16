@@ -9,7 +9,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { sql, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { silverbackOutbox, type SilverbackOutboxRow } from '@/lib/db/schema';
+import { silverbackOutbox } from '@/lib/db/schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,8 +47,13 @@ export async function GET(req: NextRequest) {
      WHERE status = 'sending'
        AND updated_at < now() - interval '5 minutes'
   `);
+  /* Raw `execute(sql\`returning *\`)` returns snake_case columns; the
+   * `<SilverbackOutboxRow>` type assertion lies about the runtime shape.
+   * Map to the typed shape here — skipping this step caused
+   * `row.attemptCount = undefined → NaN → new Date(NaN) → RangeError`
+   * on every claim. */
   const claimed = await db.transaction(async (tx) => {
-    const rows = await tx.execute<SilverbackOutboxRow>(sql`
+    const result = await tx.execute(sql`
       with chosen as (
         select id from silverback_outbox
          where status = 'pending' and next_attempt_at <= ${now.toISOString()}
@@ -59,11 +64,16 @@ export async function GET(req: NextRequest) {
       update silverback_outbox
          set status = 'sending', updated_at = now()
        where id in (select id from chosen)
-       returning *
+       returning id, event, attempt_count
     `);
-    return (rows as unknown as { rows?: SilverbackOutboxRow[] }).rows
-      ?? (rows as unknown as SilverbackOutboxRow[])
+    const raw = (result as unknown as { rows?: unknown[] }).rows
+      ?? (result as unknown as unknown[])
       ?? [];
+    return (raw as Array<Record<string, unknown>>).map((r) => ({
+      id: String(r.id),
+      event: r.event as Record<string, unknown>,
+      attemptCount: Number(r.attempt_count ?? 0),
+    }));
   });
 
   let succeeded = 0, failed = 0, abandoned = 0;
