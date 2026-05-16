@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
     const rows = await tx.execute<SilverbackOutboxRow>(sql`
       with chosen as (
         select id from silverback_outbox
-         where status = 'pending' and next_attempt_at <= ${now}
+         where status = 'pending' and next_attempt_at <= ${now.toISOString()}
          order by next_attempt_at asc
          limit ${BATCH_SIZE}
          for update skip locked
