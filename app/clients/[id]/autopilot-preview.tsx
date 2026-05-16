@@ -14,6 +14,7 @@
  */
 import { Card, Badge, Dot } from '@/components/ui';
 import { Zap, ZapOff, AlertTriangle, CheckCircle2, Sparkles, Plug } from 'lucide-react';
+import { AutopilotRunButton } from './autopilot-run-button';
 import { db } from '@/lib/db';
 import { contentTargets, integrations, type Channel } from '@/lib/db/schema';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
@@ -75,7 +76,6 @@ export async function AutopilotPreviewStrip({
 }
 
 function PreviewRow({ preview, clientId }: { preview: AutopilotPreview; clientId: string }) {
-  void clientId;
   const adapters = listAdapters();
   const labelByChannel = new Map(adapters.map((a) => [a.channel, a.label]));
 
@@ -126,6 +126,17 @@ function PreviewRow({ preview, clientId }: { preview: AutopilotPreview; clientId
     }
   }
 
+  // The Run-now button only makes sense when the tick would actually
+  // produce something. For the other states the button shows but is
+  // disabled with a tooltip explaining why; lets the operator see the
+  // affordance exists for when state changes.
+  const runEnabled = preview.kind === 'will-fire';
+  const runHint =
+    preview.kind === 'will-fire' ? `Fire the same tick the daily cron would run for this client now.` :
+    preview.kind === 'paused' ? `Autopilot is off — unpause first.` :
+    preview.kind === 'no-channels' ? `Connect a channel before running.` :
+    `Cadence is already met — nothing to do.`;
+
   return (
     <Card className="overflow-hidden">
       <div className="px-5 py-3 flex items-center gap-3">
@@ -144,6 +155,7 @@ function PreviewRow({ preview, clientId }: { preview: AutopilotPreview; clientId
         </div>
         <Dot tone={tone} />
         {tone === 'warn' && <AlertTriangle size={12} className="text-warn flex-none" />}
+        <AutopilotRunButton clientId={clientId} enabled={runEnabled} hint={runHint} />
       </div>
     </Card>
   );
