@@ -3,9 +3,9 @@
  * production DB (or whatever DATABASE_URL_DIRECT points at).
  */
 import 'dotenv/config';
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { migrate } from 'drizzle-orm/neon-http/migrator';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 
 const url = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
 if (!url) {
@@ -14,11 +14,12 @@ if (!url) {
 }
 
 async function main() {
-  const sql = neon(url!);
+  const sql = postgres(url!, { prepare: false, max: 1 });
   const db = drizzle(sql);
   console.log('▸ running migrations from ./drizzle');
   await migrate(db, { migrationsFolder: './drizzle' });
   console.log('✓ migrations applied');
+  await sql.end();
 }
 
 main().catch((e) => {
