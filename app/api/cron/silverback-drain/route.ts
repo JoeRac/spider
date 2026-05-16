@@ -38,6 +38,15 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
+  /* Stuck-row recovery: revert any row stuck in 'sending' for >5
+   * minutes back to 'pending'. Handles the lambda-crashed-mid-flight
+   * case where the row was claimed but never finalized. */
+  await db.execute(sql`
+    UPDATE silverback_outbox
+       SET status = 'pending', updated_at = now()
+     WHERE status = 'sending'
+       AND updated_at < now() - interval '5 minutes'
+  `);
   const claimed = await db.transaction(async (tx) => {
     const rows = await tx.execute<SilverbackOutboxRow>(sql`
       with chosen as (
