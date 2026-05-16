@@ -6,7 +6,8 @@ import { clients, seoProfiles, seoAudits } from '@/lib/db/schema';
 import { desc, eq, sql } from 'drizzle-orm';
 import Link from 'next/link';
 
-export const dynamic = 'force-dynamic';
+// SEO dashboard is observational; 5-minute ISR saves Neon compute.
+export const revalidate = 300;
 
 export default async function SeoPage() {
   const profiles = await db

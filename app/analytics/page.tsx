@@ -7,7 +7,8 @@ import { desc, eq, sql } from 'drizzle-orm';
 import { listAdapters } from '@/lib/channels/registry';
 import Link from 'next/link';
 
-export const dynamic = 'force-dynamic';
+// Analytics dashboard is observational; 5-minute ISR saves Neon compute.
+export const revalidate = 300;
 
 export default async function AnalyticsPage() {
   const adapters = listAdapters();

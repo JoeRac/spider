@@ -23,7 +23,10 @@ import { db } from '@/lib/db';
 import { clients, integrations, contentItems, contentTargets, auditLog } from '@/lib/db/schema';
 import { desc, eq, sql } from 'drizzle-orm';
 
-export const dynamic = 'force-dynamic';
+// 5-minute ISR — system health is observational, not transactional. The
+// operator hitting refresh shouldn't re-run six aggregate queries against
+// Neon every time.
+export const revalidate = 300;
 
 const OAUTH_APP_ENVS: Array<{ key: string; label: string; envs: string[] }> = [
   { key: 'google',   label: 'Google (GMB + YouTube)',       envs: ['GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET'] },
