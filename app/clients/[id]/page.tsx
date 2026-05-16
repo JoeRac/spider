@@ -20,6 +20,7 @@ import { SeoPanel } from './seo-panel';
 import { CitationsCard } from './citations-card';
 import { SitemapCard } from './sitemap-card';
 import { OnboardingChecklist, type OnboardingStep } from './onboarding-checklist';
+import { ActivityTimeline } from './activity-timeline';
 import { AutopilotCard } from './autopilot-card';
 import { JsonLdCard } from './jsonld-card';
 import { getProfile, latestAudit } from '@/lib/seo/audit';
@@ -199,10 +200,6 @@ async function OverviewTab({ clientId, client, integrationRows }: {
     },
   ];
 
-  const recentContent = await db.select({
-    id: contentItems.id, kind: contentItems.kind, title: contentItems.title,
-    body: contentItems.body, status: contentItems.status, createdAt: contentItems.createdAt,
-  }).from(contentItems).where(eq(contentItems.clientId, clientId)).orderBy(desc(contentItems.createdAt)).limit(5);
 
   return (
     <>
@@ -252,37 +249,9 @@ async function OverviewTab({ clientId, client, integrationRows }: {
           </div>
         </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader
-            title="Recent content"
-            subtitle="Drafts + scheduled items generated for this client."
-            action={<Link href={`/content?clientId=${clientId}`} className="text-xs text-muted hover:text-fg">View all →</Link>}
-          />
-          {recentContent.length === 0 ? (
-            <div className="p-5">
-              <Empty
-                icon={<FileText size={24} />}
-                title="No content yet"
-                hint="Hit Generate content in the page header to spin up a batch."
-              />
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {recentContent.map((r) => (
-                <li key={r.id}>
-                  <Link href={`/content/${r.id}`} className="block px-5 py-3 hover:bg-subtle/40 transition-colors">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge tone={r.status === 'published' ? 'ok' : r.status === 'failed' ? 'err' : 'info'}>{r.status}</Badge>
-                      <span className="text-[10px] uppercase tracking-wider text-faint font-semibold">{r.kind}</span>
-                      <span className="text-[10px] text-muted ml-auto">{new Date(r.createdAt).toLocaleDateString()}</span>
-                    </div>
-                    <div className="text-sm text-fg font-medium truncate">{r.title ?? r.body.slice(0, 80) + '…'}</div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+        <div className="lg:col-span-2">
+          <ActivityTimeline clientId={clientId} />
+        </div>
       </div>
 
       <div className="mt-6">
