@@ -26,8 +26,26 @@ export const config = {
   /** Cron secret — gates /api/cron/* so only Vercel cron can invoke. */
   cronSecret: process.env.CRON_SECRET ?? '',
 
+  /**
+   * Agency-owned WordPress — one WP install the agency runs, every
+   * client can post to it under a per-client category. Unlike the
+   * per-client WordPress mode (where each dealership has their own
+   * site + credentials), this lets us publish for a client that
+   * doesn't have their own blog.
+   *
+   * When base URL + creds are set, the operator can flip any client's
+   * website_blog channel into 'agency' mode in one click.
+   */
+  agencyWpBaseUrl: process.env.AGENCY_WORDPRESS_BASE_URL ?? '',
+  agencyWpUsername: process.env.AGENCY_WORDPRESS_USERNAME ?? '',
+  agencyWpAppPassword: process.env.AGENCY_WORDPRESS_APP_PASSWORD ?? '',
+
   publicUrl: process.env.PUBLIC_URL ?? 'http://localhost:3000',
 } as const;
+
+export function agencyWpConfigured(): boolean {
+  return !!(config.agencyWpBaseUrl && config.agencyWpUsername && config.agencyWpAppPassword);
+}
 
 export function requireDatabaseUrl(): string {
   return required('DATABASE_URL', config.databaseUrl);
