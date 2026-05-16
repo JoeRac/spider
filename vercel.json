@@ -2,27 +2,22 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "_comment": "Every 10 min keeps publish latency reasonable (scheduled posts go out within 10 min) while halving DB wake-ups vs the previous every-5.",
       "path": "/api/cron/publish",
       "schedule": "*/10 * * * *"
     },
     {
-      "_comment": "Daily 14:00 UTC AI-generated batch per active client.",
       "path": "/api/cron/generate-daily",
       "schedule": "0 14 * * *"
     },
     {
-      "_comment": "Metrics fetched 4x/day instead of hourly — engagement counts aren't time-critical and the Neon free plan rewards fewer wake-ups.",
       "path": "/api/cron/refresh-metrics",
       "schedule": "0 */6 * * *"
     },
     {
-      "_comment": "Daily sitemap snapshot at 06:00 UTC.",
       "path": "/api/cron/sitemap-refresh",
       "schedule": "0 6 * * *"
     },
     {
-      "_comment": "Drains the silverback_outbox. Was every minute (1,440/day on Neon); now every 3 minutes (480/day) — events still get out within a few minutes, compute usage drops ~66%.",
       "path": "/api/cron/silverback-drain",
       "schedule": "*/3 * * * *"
     }
