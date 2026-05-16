@@ -73,23 +73,49 @@ export function shouldPublish(clientStatus: string, policy: AutopilotPolicy): bo
 }
 
 /**
+ * Sensible default cadence for a client whose operator hasn't explicitly
+ * configured one. Encodes the agency stance of "2–3 pieces per week,
+ * spread across whatever channels are live." Channels with stronger
+ * SEO returns get a 1; everything else stays at 0 to keep the volume
+ * modest.
+ *
+ * The first time the cron picks a channel for a default-cadence client,
+ * it'll lean on this map. Operators can override per-channel anytime
+ * via the AutopilotCard on the client overview.
+ */
+const DEFAULT_CADENCE: Partial<Record<Channel, number>> = {
+  google_my_business: 1,
+  website_blog:       1,
+  facebook:           1,
+};
+
+/**
  * Pick the channel that's most overdue per the cadence map. Returns
  * `null` when no live channel is below its weekly target — the cron
  * skips generation that day.
  *
- * Phase-1 implementation is intentionally simple: each call picks the
- * channel whose actual-vs-target ratio is lowest. Cron passes a tally
- * of "posts this week per channel" so the function is pure.
+ * If the per-client cadence map is *completely empty*, we fall back to
+ * the agency default (DEFAULT_CADENCE) so a newly-activated client gets
+ * a sane volume of content without the operator having to touch the
+ * Autopilot card first. The default keeps total volume at ~2–3 pieces
+ * per week, matching the spec.
+ *
+ * Once the operator sets any cadence entry (even a single channel at 1),
+ * the default is bypassed entirely — explicit configuration always wins.
  */
 export function pickChannelForGeneration(
   liveChannels: Channel[],
   cadence: Record<string, number>,
   thisWeek: Record<string, number>,
 ): Channel | null {
+  const effective = Object.keys(cadence).length === 0
+    ? defaultCadenceForChannels(liveChannels)
+    : cadence;
+
   let bestChannel: Channel | null = null;
   let bestRatio = Infinity;
   for (const ch of liveChannels) {
-    const target = cadence[ch] ?? 0;
+    const target = effective[ch] ?? 0;
     if (target <= 0) continue;
     const actual = thisWeek[ch] ?? 0;
     const ratio = actual / target;
@@ -99,4 +125,27 @@ export function pickChannelForGeneration(
     }
   }
   return bestChannel;
+}
+
+/**
+ * Project DEFAULT_CADENCE onto only the channels this client has live,
+ * so we don't promise output for a channel that doesn't exist.
+ */
+function defaultCadenceForChannels(liveChannels: Channel[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const ch of liveChannels) {
+    const target = DEFAULT_CADENCE[ch];
+    if (target) out[ch] = target;
+  }
+  return out;
+}
+
+/**
+ * Tells the UI whether a client's cadence is operator-configured or
+ * falling back to the agency default. Used in the Autopilot card and
+ * cron summaries so the operator can see "default cadence applied"
+ * rather than wonder why posts are flowing without their input.
+ */
+export function isUsingDefaultCadence(cadence: Record<string, number>): boolean {
+  return Object.keys(cadence).length === 0;
 }

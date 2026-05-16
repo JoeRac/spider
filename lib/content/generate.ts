@@ -13,7 +13,7 @@
  */
 import { db } from '@/lib/db';
 import { clients, generationRuns, contentItems, integrations, type Client, type Channel } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import { zaiChatJSON, estimateCostCents } from '@/lib/zai';
 import { TEMPLATES, generationOutputSchema, type ContentKind } from './templates';
@@ -50,7 +50,12 @@ export async function runGeneration(input: GenerateInput): Promise<GenerationOut
   const template = TEMPLATES[input.kind];
   const quantity = clamp(input.quantity ?? 3, 1, 10);
 
-  const { systemPrompt, userPrompt } = buildPrompts(client, template, quantity, input.brief);
+  // History-aware: pull what we've drafted/published for this client in the
+  // last 14 days so the agent can avoid repeating itself. Cheap single
+  // query, capped at 20 rows to keep the prompt budget reasonable.
+  const recentItems = await loadRecentContentSummary(client.id);
+
+  const { systemPrompt, userPrompt } = buildPrompts(client, template, quantity, input.brief, recentItems);
 
   /* Resolve the model. Explicit input.model wins; otherwise fetch the
    * (spider, content-draft.<kind>) assignment from Silverback. Falls
@@ -168,7 +173,43 @@ function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
-function buildPrompts(client: Client, template: typeof TEMPLATES[ContentKind], quantity: number, brief?: string): { systemPrompt: string; userPrompt: string } {
+type RecentItemSummary = { kind: string; title: string | null; bodyPreview: string; daysAgo: number };
+
+/**
+ * Pull recent content summaries (last 14 days, capped at 20 rows). Feeds
+ * the system prompt so the agent can avoid repeating topics. Kept cheap
+ * — single indexed query, body is truncated server-side to keep the
+ * prompt budget tight.
+ */
+async function loadRecentContentSummary(clientId: string): Promise<RecentItemSummary[]> {
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      kind: contentItems.kind,
+      title: contentItems.title,
+      body: contentItems.body,
+      createdAt: contentItems.createdAt,
+    })
+    .from(contentItems)
+    .where(and(eq(contentItems.clientId, clientId), gte(contentItems.createdAt, since)))
+    .orderBy(desc(contentItems.createdAt))
+    .limit(20);
+  const now = Date.now();
+  return rows.map((r) => ({
+    kind: r.kind,
+    title: r.title,
+    bodyPreview: r.body.slice(0, 180),
+    daysAgo: Math.max(0, Math.round((now - new Date(r.createdAt).getTime()) / (24 * 60 * 60 * 1000))),
+  }));
+}
+
+function buildPrompts(
+  client: Client,
+  template: typeof TEMPLATES[ContentKind],
+  quantity: number,
+  brief?: string,
+  recent: RecentItemSummary[] = [],
+): { systemPrompt: string; userPrompt: string } {
   const voice = voiceFromClientSettings(client.settings);
   const voiceBlock = voiceToSystemPrompt(voice, {
     name: client.name,
@@ -190,12 +231,24 @@ function buildPrompts(client: Client, template: typeof TEMPLATES[ContentKind], q
     `Return exactly ${quantity} items.`,
   ].join('\n');
 
+  // The history block goes in the *user* turn so it reads as "here's what
+  // we just did, now do something new" rather than instructions.
+  const historyBlock = recent.length === 0
+    ? null
+    : [
+        `Recent content already produced for this client (last 14 days, ${recent.length} item${recent.length === 1 ? '' : 's'}):`,
+        ...recent.map((r) => `- (${r.daysAgo}d ago, ${r.kind}) ${r.title ? `"${r.title}" — ` : ''}${r.bodyPreview}${r.bodyPreview.length === 180 ? '…' : ''}`),
+        '',
+        'Do not repeat these angles or hooks. Pick a fresh topic or angle. If a topic feels close, lean on a different specific (different vehicle, different season, different customer story, etc.).',
+      ].join('\n');
+
   const userPrompt = [
     `Client: ${client.name}.`,
     client.description ? `About the client: ${client.description}` : null,
+    historyBlock,
     brief?.trim() ? `Operator brief for this batch: ${brief.trim()}` : null,
     `Generate ${quantity} ${template.label.toLowerCase()} items.`,
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('\n\n');
 
   return { systemPrompt, userPrompt };
 }

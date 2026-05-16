@@ -48,7 +48,9 @@ export async function GET(req: NextRequest) {
     const settings = (client.settings as Record<string, unknown>) ?? {};
     const fallbackQuota = Number((settings.dailyQuota as number | undefined) ?? 1);
 
-    // Already at quota for the day? (Legacy check; preserves prior behaviour.)
+    // Daily safety net regardless of cadence — prevents a runaway loop
+    // generating multiple times per day if the cron is double-fired or
+    // replayed.
     const [recent] = await db.select({ n: sql<number>`count(*)::int` })
       .from(contentItems)
       .where(and(eq(contentItems.clientId, client.id), gte(contentItems.createdAt, sinceDay)));
@@ -81,9 +83,31 @@ export async function GET(req: NextRequest) {
     const weekCounts: Record<string, number> = {};
     for (const w of weekCountsRaw) weekCounts[w.channel] = w.n;
 
-    // Pick a channel + content kind.
+    // Pick a channel + content kind. If no live channel is below its
+    // cadence target, we skip — don't over-generate when the agency is
+    // already on plan. Previously the code defaulted to a generic 'post'
+    // here, which silently doubled output for clients whose cadence was
+    // already met. A client with cadence {gmb:2, twitter:1} (3/wk) was
+    // getting 7/wk because the cron ran daily regardless.
+    //
+    // When the operator hasn't set a cadence at all, pickChannelForGeneration
+    // falls back to a sane agency default (~2–3/wk across live channels)
+    // so a fresh client still gets content. See lib/content/autopilot.ts.
+    const usingDefaultCadence = Object.keys(policy.cadence).length === 0;
     const pickedChannel = pickChannelForGeneration(liveChannels, policy.cadence, weekCounts);
-    const kind = pickedChannel ? pickKindForChannel(pickedChannel) : 'post';
+    if (!pickedChannel) {
+      summary.push({
+        clientId: client.id,
+        status: 'skipped',
+        reason: liveChannels.length === 0
+          ? 'no-live-channels'
+          : usingDefaultCadence
+            ? 'default-cadence-met'
+            : 'cadence-met',
+      });
+      continue;
+    }
+    const kind = pickKindForChannel(pickedChannel);
 
     try {
       const outcome = await runGeneration({
@@ -96,7 +120,7 @@ export async function GET(req: NextRequest) {
         status: outcome.status,
         runId: outcome.runId,
         items: outcome.itemIds.length,
-        channel: pickedChannel ?? undefined,
+        channel: pickedChannel,
       });
     } catch (e) {
       summary.push({ clientId: client.id, status: 'failed', reason: e instanceof Error ? e.message : 'unknown' });
