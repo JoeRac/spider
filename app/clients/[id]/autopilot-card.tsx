@@ -4,15 +4,24 @@
  * tab so the operator can see "what does Spider do for this client when
  * I'm not looking?" without leaving the workspace.
  *
- * The mode is the load-bearing knob. The per-channel cadence sliders
- * are advisory in phase-1 (the cron honors them best-effort; the data
- * is captured even when not enforced).
+ * Honest UI rule: when the operator hasn't set a cadence, the cron
+ * silently applies an agency default (defined in lib/content/autopilot).
+ * The card surfaces that explicitly (a "default cadence applied" chip)
+ * and shows the *effective* weekly total — what Spider will actually
+ * post per week — in both modes so the operator never has to do mental
+ * arithmetic.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardHeader, Button, Spinner, Segmented, FieldGroup, Input, SectionLabel, Badge, Dot } from '@/components/ui';
-import { Save, Plug, Zap, ZapOff } from 'lucide-react';
-import { type AutopilotPolicy, type AutopilotMode } from '@/lib/content/autopilot';
+import { Save, Plug, Zap, ZapOff, Sparkles } from 'lucide-react';
+import {
+  effectiveCadence,
+  isUsingDefaultCadence,
+  type AutopilotPolicy,
+  type AutopilotMode,
+} from '@/lib/content/autopilot';
+import type { Channel } from '@/lib/db/schema';
 
 type ChannelRow = { channel: string; label: string; status: string };
 
@@ -35,19 +44,44 @@ export function AutopilotCard({
 
   const liveChannels = channels.filter((c) => c.status === 'connected');
 
+  // Mirror the cron's resolution so the operator sees exactly what
+  // Spider will do per week — not just what they've "configured."
+  const liveChannelKeys = useMemo(
+    () => liveChannels.map((c) => c.channel as Channel),
+    [liveChannels],
+  );
+  const persistedShape = useMemo(() => {
+    // The same filtering save() does — only positive, live-channel entries
+    // are persisted. Compute it now so the chip + summary react live as
+    // the operator edits.
+    const out: Record<string, number> = {};
+    for (const c of liveChannels) {
+      const v = cadence[c.channel];
+      if (typeof v === 'number' && v > 0) out[c.channel] = v;
+    }
+    return out;
+  }, [cadence, liveChannels]);
+  const usingDefault = useMemo(
+    () => isUsingDefaultCadence(persistedShape),
+    [persistedShape],
+  );
+  const effective = useMemo(
+    () => effectiveCadence(persistedShape, liveChannelKeys),
+    [persistedShape, liveChannelKeys],
+  );
+  const weeklyTotal = useMemo(
+    () => Object.values(effective).reduce((sum, n) => sum + (n ?? 0), 0),
+    [effective],
+  );
+
   async function save() {
     setBusy(true);
     setMessage(null);
     try {
-      const cleanCadence: Record<string, number> = {};
-      for (const c of liveChannels) {
-        const v = cadence[c.channel];
-        if (typeof v === 'number' && v > 0) cleanCadence[c.channel] = v;
-      }
       const res = await fetch(`/api/clients/${clientId}/autopilot`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode, cadence: cleanCadence }),
+        body: JSON.stringify({ mode, cadence: persistedShape }),
       });
       const json = await res.json();
       if (!res.ok) { setMessage(json?.error ?? `Failed (${res.status})`); return; }
@@ -95,31 +129,61 @@ export function AutopilotCard({
         </div>
 
         <div>
-          <SectionLabel className="mb-2">Per-channel cadence</SectionLabel>
+          <div className="flex items-center justify-between mb-2">
+            <SectionLabel>Per-channel cadence</SectionLabel>
+            {usingDefault && liveChannels.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent-soft text-accent ring-1 ring-inset ring-accent/20"
+                title="No cadence set — Spider is applying its agency default (about 1/week on GMB, blog, and Facebook where they're connected)."
+              >
+                <Sparkles size={10} />
+                default cadence applied
+              </span>
+            )}
+          </div>
           {liveChannels.length === 0 ? (
             <div className="text-xs text-muted">Connect channels first; cadence applies once a channel is live.</div>
           ) : (
             <div className="space-y-2">
-              {liveChannels.map((c) => (
-                <div key={c.channel} className="flex items-center gap-3">
-                  <div className="flex-1 text-sm text-fg">{c.label}</div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={50}
-                      value={cadence[c.channel] ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value === '' ? 0 : Number(e.target.value);
-                        setCadence((prev) => ({ ...prev, [c.channel]: v }));
-                      }}
-                      placeholder="0"
-                      className="h-7 py-0 text-xs w-16 text-right tabular-nums"
-                    />
-                    <span className="text-xs text-muted w-16">posts/week</span>
+              {liveChannels.map((c) => {
+                const defaultTarget = usingDefault ? (effective[c.channel] ?? 0) : 0;
+                return (
+                  <div key={c.channel} className="flex items-center gap-3">
+                    <div className="flex-1 text-sm text-fg">
+                      {c.label}
+                      {usingDefault && defaultTarget > 0 && (
+                        <span className="ml-2 text-[10px] text-faint">default: {defaultTarget}/wk</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={cadence[c.channel] ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value === '' ? 0 : Number(e.target.value);
+                          setCadence((prev) => ({ ...prev, [c.channel]: v }));
+                        }}
+                        placeholder={defaultTarget > 0 ? String(defaultTarget) : '0'}
+                        className="h-7 py-0 text-xs w-16 text-right tabular-nums"
+                      />
+                      <span className="text-xs text-muted w-16">posts/week</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+          )}
+          {liveChannels.length > 0 && (
+            <div className="mt-3 flex items-center justify-between text-[11px] text-muted bg-bg/40 border border-border rounded px-3 py-2">
+              <span>
+                {weeklyTotal === 0
+                  ? <>No channels are scheduled. Spider won&apos;t auto-generate for this client until you set at least one.</>
+                  : usingDefault
+                    ? <>Spider will post about <span className="text-fg font-medium tabular-nums">{weeklyTotal}/week</span> total (default cadence). Set any value above to override.</>
+                    : <>Spider will post about <span className="text-fg font-medium tabular-nums">{weeklyTotal}/week</span> total. 0 = skip that channel.</>}
+              </span>
             </div>
           )}
           <div className="text-[11px] text-muted mt-3">

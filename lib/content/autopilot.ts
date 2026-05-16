@@ -149,3 +149,27 @@ function defaultCadenceForChannels(liveChannels: Channel[]): Record<string, numb
 export function isUsingDefaultCadence(cadence: Record<string, number>): boolean {
   return Object.keys(cadence).length === 0;
 }
+
+/**
+ * Resolves what the cron will *actually* schedule against — the explicit
+ * per-client cadence when set, otherwise the default agency cadence
+ * projected onto live channels. Mirror of the resolution that lives
+ * inside `pickChannelForGeneration` so the UI can render an honest
+ * "Spider will post N/week" summary instead of inferring it.
+ */
+export function effectiveCadence(
+  cadence: Record<string, number>,
+  liveChannels: Channel[],
+): Record<string, number> {
+  if (Object.keys(cadence).length === 0) {
+    return defaultCadenceForChannels(liveChannels);
+  }
+  // Custom cadence — return only entries for live channels and only
+  // positive values; the cron skips zeros anyway, no need to surface them.
+  const filtered: Record<string, number> = {};
+  for (const ch of liveChannels) {
+    const target = cadence[ch];
+    if (typeof target === 'number' && target > 0) filtered[ch] = target;
+  }
+  return filtered;
+}
