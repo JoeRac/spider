@@ -22,6 +22,7 @@ import { SitemapCard } from './sitemap-card';
 import { OnboardingChecklist, type OnboardingStep } from './onboarding-checklist';
 import { ActivityTimeline } from './activity-timeline';
 import { AutopilotCard } from './autopilot-card';
+import { AutopilotPreviewStrip } from './autopilot-preview';
 import { JsonLdCard } from './jsonld-card';
 import { getProfile, latestAudit } from '@/lib/seo/audit';
 import { CITATION_DIRECTORIES } from '@/lib/seo/citations';
@@ -254,7 +255,17 @@ async function OverviewTab({ clientId, client, integrationRows }: {
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-3">
+        <AutopilotPreviewStrip
+          clientId={clientId}
+          clientStatus={client.status}
+          policy={autopilotFromClientSettings(client.settings)}
+          integrationRows={integrationRows.map((i) => ({
+            id: i.id,
+            channel: i.channel,
+            status: i.status,
+          }))}
+        />
         <AutopilotCard
           clientId={clientId}
           clientStatus={client.status}

@@ -7,7 +7,8 @@ import { db } from '@/lib/db';
 import { clients } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { ok, err, readJson } from '@/lib/api-helpers';
-import { autopilotFromClientSettings, updateAutopilot, autopilotSchema } from '@/lib/content/autopilot';
+import { autopilotFromClientSettings, autopilotSchema } from '@/lib/content/autopilot';
+import { updateAutopilot } from '@/lib/content/autopilot-store';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

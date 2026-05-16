@@ -19,9 +19,7 @@
  * day. Channels not listed default to the global generation defaults.
  */
 import { z } from 'zod';
-import { db } from '@/lib/db';
-import { clients, type Channel } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import type { Channel } from '@/lib/db/schema';
 
 export type AutopilotMode = 'full' | 'review' | 'paused';
 
@@ -41,13 +39,10 @@ export function autopilotFromClientSettings(settings: unknown): AutopilotPolicy 
   return parsed.success ? parsed.data : DEFAULT_POLICY;
 }
 
-export async function updateAutopilot(clientId: string, policy: AutopilotPolicy): Promise<AutopilotPolicy> {
-  const cleaned = autopilotSchema.parse(policy);
-  const [row] = await db.select({ settings: clients.settings }).from(clients).where(eq(clients.id, clientId)).limit(1);
-  const next = { ...(row?.settings ?? {}), autopilot: cleaned };
-  await db.update(clients).set({ settings: next, updatedAt: new Date() }).where(eq(clients.id, clientId));
-  return cleaned;
-}
+// `updateAutopilot` (the only DB-touching function in this module) moved
+// to `./autopilot-store.ts` so this file stays client-safe — the
+// AutopilotCard imports value helpers from here and we don't want the
+// bundler to drag the postgres driver into the client bundle.
 
 /**
  * Should the cron worker generate content for this client today?
@@ -172,4 +167,55 @@ export function effectiveCadence(
     if (typeof target === 'number' && target > 0) filtered[ch] = target;
   }
   return filtered;
+}
+
+/**
+ * What would the daily cron do for this client right now? Pure function
+ * that mirrors the cron's gates + resolver so the Overview tab can
+ * render an honest "Next autopilot tick: ..." line without round-
+ * tripping through the cron.
+ *
+ * Result is a discriminated union the UI renders directly:
+ *   - { kind: 'paused', reason }      — client.status or autopilot.mode blocks
+ *   - { kind: 'no-channels' }         — autopilot would run but no live channels
+ *   - { kind: 'cadence-met', usingDefault } — every live channel is on or above target this week
+ *   - { kind: 'will-fire', channel, isDefaultCadence } — the next tick will pick this channel
+ *
+ * The cron actually runs once a day, so the "when" is "next daily cron
+ * fire" — we don't pre-compute the timestamp here because cron schedules
+ * are configured externally.
+ */
+export type AutopilotPreview =
+  | { kind: 'paused'; reason: 'client-archived' | 'client-paused' | 'client-onboarding' | 'autopilot-paused' }
+  | { kind: 'no-channels' }
+  | { kind: 'cadence-met'; usingDefault: boolean; weeklyTotal: number }
+  | { kind: 'will-fire'; channel: Channel; usingDefault: boolean; weeklyTotal: number };
+
+export function previewNextAutopilotTick(args: {
+  clientStatus: string;
+  policy: AutopilotPolicy;
+  liveChannels: Channel[];
+  thisWeekCounts: Record<string, number>;
+}): AutopilotPreview {
+  const { clientStatus, policy, liveChannels, thisWeekCounts } = args;
+  if (clientStatus === 'archived') return { kind: 'paused', reason: 'client-archived' };
+  if (clientStatus === 'paused')   return { kind: 'paused', reason: 'client-paused' };
+  if (clientStatus !== 'active')   return { kind: 'paused', reason: 'client-onboarding' };
+  if (policy.mode === 'paused')    return { kind: 'paused', reason: 'autopilot-paused' };
+
+  if (liveChannels.length === 0)   return { kind: 'no-channels' };
+
+  const effective = effectiveCadence(policy.cadence, liveChannels);
+  const usingDefault = isUsingDefaultCadence(policy.cadence);
+  const weeklyTotal = Object.values(effective).reduce((s, n) => s + (n ?? 0), 0);
+
+  if (weeklyTotal === 0) {
+    // Live channels exist but none has a positive target — operator
+    // configured the autopilot to do nothing.
+    return { kind: 'cadence-met', usingDefault, weeklyTotal: 0 };
+  }
+
+  const picked = pickChannelForGeneration(liveChannels, policy.cadence, thisWeekCounts);
+  if (!picked) return { kind: 'cadence-met', usingDefault, weeklyTotal };
+  return { kind: 'will-fire', channel: picked, usingDefault, weeklyTotal };
 }
