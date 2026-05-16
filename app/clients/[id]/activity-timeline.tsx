@@ -2,12 +2,13 @@
  * Activity timeline — the single chronological feed for one client.
  *
  * Answers the operator question "is Spider actually doing good work
- * for this dealership?" in one glance, by merging four event streams:
+ * for this dealership?" in one glance, by merging five event streams:
  *
  *   - Content publishes (per channel, with external URL when known)
+ *   - Content **publish failures** (per channel, with the lastError)
  *   - Content drafts (anything Z.AI produced)
  *   - SEO audits (with score)
- *   - Integration lifecycle (connected/expired/error)  via audit_log
+ *   - Integration lifecycle (connected/expired/error) via audit_log
  *
  * Replaces the previous "Recent content" card which only showed
  * content_items by creation date and didn't reveal what actually went
@@ -21,14 +22,14 @@ import { contentItems, contentTargets, integrations, seoAudits, auditLog } from 
 import { and, desc, eq, gte, or, sql } from 'drizzle-orm';
 import Link from 'next/link';
 import { Card, CardHeader, Empty, Badge, Dot } from '@/components/ui';
-import { Activity, FileText, Send, Search, Plug, ExternalLink } from 'lucide-react';
+import { Activity, FileText, Send, Search, Plug, ExternalLink, AlertTriangle } from 'lucide-react';
 
 const WINDOW_DAYS = 30;
 const ROW_CAP = 20;
 
 type TimelineRow = {
   ts: Date;
-  kind: 'publish' | 'draft' | 'audit' | 'integration';
+  kind: 'publish' | 'publish-failed' | 'draft' | 'audit' | 'integration';
   /** Per-row anchor — the entity the operator wants to click through to. */
   href: string | null;
   /** External URL (e.g. live tweet, GMB post) when available. */
@@ -37,12 +38,14 @@ type TimelineRow = {
   badgeTone: 'ok' | 'info' | 'warn' | 'err' | 'accent' | 'neutral';
   title: string;
   detail: string | null;
+  /** Per-row last-error blurb — only set on publish-failed rows. */
+  errorDetail?: string | null;
 };
 
 export async function ActivityTimeline({ clientId }: { clientId: string }) {
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const [publishes, drafts, audits, events] = await Promise.all([
+  const [publishes, failedPublishes, drafts, audits, events] = await Promise.all([
     /* Publishes — every content_target that landed (status='published') in
      * the last 30d for this client. Joined to integrations for the channel,
      * to content_items for the title/kind. */
@@ -65,6 +68,33 @@ export async function ActivityTimeline({ clientId }: { clientId: string }) {
         gte(contentTargets.publishedAt, since),
       ))
       .orderBy(desc(contentTargets.publishedAt))
+      .limit(ROW_CAP),
+
+    /* Failed publishes — content_targets that gave up (status='failed' →
+     * dispatcher hit MAX_ATTEMPTS, see lib/publishers/dispatch.ts). These
+     * never reached the dealership and the operator needs to see them so
+     * silent failures aren't actually silent. We use updatedAt as the
+     * timestamp because publishedAt is null on failure. */
+    db.select({
+      id: contentTargets.id,
+      contentItemId: contentTargets.contentItemId,
+      updatedAt: contentTargets.updatedAt,
+      lastError: contentTargets.lastError,
+      attempts: contentTargets.attempts,
+      channel: integrations.channel,
+      title: contentItems.title,
+      body: contentItems.body,
+      kind: contentItems.kind,
+    })
+      .from(contentTargets)
+      .innerJoin(contentItems, eq(contentItems.id, contentTargets.contentItemId))
+      .innerJoin(integrations, eq(integrations.id, contentTargets.integrationId))
+      .where(and(
+        eq(contentItems.clientId, clientId),
+        eq(contentTargets.status, 'failed'),
+        gte(contentTargets.updatedAt, since),
+      ))
+      .orderBy(desc(contentTargets.updatedAt))
       .limit(ROW_CAP),
 
     /* Drafts — content_items created in the window. We filter out items
@@ -144,6 +174,21 @@ export async function ActivityTimeline({ clientId }: { clientId: string }) {
     });
   }
 
+  for (const f of failedPublishes) {
+    if (!f.updatedAt) continue;
+    rows.push({
+      ts: f.updatedAt as Date,
+      kind: 'publish-failed',
+      href: `/content/${f.contentItemId}`,
+      externalUrl: null,
+      badge: shortChannel(f.channel),
+      badgeTone: 'err',
+      title: f.title ?? f.body.slice(0, 90),
+      detail: `${f.kind} publish failed after ${f.attempts ?? 0} attempt${(f.attempts ?? 0) === 1 ? '' : 's'}`,
+      errorDetail: f.lastError ?? null,
+    });
+  }
+
   for (const d of drafts) {
     if (publishedItemIds.has(d.id)) continue;
     if (d.status === 'archived') continue;
@@ -198,8 +243,21 @@ export async function ActivityTimeline({ clientId }: { clientId: string }) {
     <Card>
       <CardHeader
         title="Activity"
-        subtitle={`Last ${WINDOW_DAYS} days — every publish, draft, audit, and integration event for this client.`}
-        action={<Link href={`/content?clientId=${clientId}`} className="text-xs text-muted hover:text-fg">All content →</Link>}
+        subtitle={`Last ${WINDOW_DAYS} days — every publish, failure, draft, audit, and integration event for this client.`}
+        action={
+          <div className="flex items-center gap-2">
+            {failedPublishes.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-err-soft text-err ring-1 ring-inset ring-err/20"
+                title="At least one channel rejected a publish after 4 retries. Click any 'publish failed' row below to see the lastError."
+              >
+                <AlertTriangle size={10} />
+                {failedPublishes.length} failed publish{failedPublishes.length === 1 ? '' : 'es'}
+              </span>
+            )}
+            <Link href={`/content?clientId=${clientId}`} className="text-xs text-muted hover:text-fg">All content →</Link>
+          </div>
+        }
       />
       {top.length === 0 ? (
         <div className="p-5">
@@ -244,6 +302,11 @@ function Row({ row }: { row: TimelineRow }) {
           </span>
         </div>
         <div className="text-sm text-fg truncate">{row.title}</div>
+        {row.errorDetail && (
+          <div className="text-[11px] text-err truncate mt-0.5" title={row.errorDetail}>
+            {row.errorDetail}
+          </div>
+        )}
       </div>
     </>
   );
@@ -261,10 +324,11 @@ function Row({ row }: { row: TimelineRow }) {
 }
 
 function IconForKind({ kind }: { kind: TimelineRow['kind'] }) {
-  if (kind === 'publish')     return <Send size={13} className="text-ok" />;
-  if (kind === 'draft')       return <FileText size={13} className="text-muted" />;
-  if (kind === 'audit')       return <Search size={13} className="text-info" />;
-  if (kind === 'integration') return <Plug size={13} className="text-accent" />;
+  if (kind === 'publish')        return <Send size={13} className="text-ok" />;
+  if (kind === 'publish-failed') return <AlertTriangle size={13} className="text-err" />;
+  if (kind === 'draft')          return <FileText size={13} className="text-muted" />;
+  if (kind === 'audit')          return <Search size={13} className="text-info" />;
+  if (kind === 'integration')    return <Plug size={13} className="text-accent" />;
   return <Dot tone="neutral" />;
 }
 
