@@ -43,7 +43,6 @@ async function main() {
     } else {
       const [row] = await db.insert(clients).values({
         leadId: c.leadId,
-        badgerCompanyId: c.leadId,
         name: c.name,
         website: c.website,
         phone: c.phone,

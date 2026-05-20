@@ -53,7 +53,6 @@ export async function POST(req: NextRequest) {
   const [row] = await db.insert(clients).values({
     name: body.name,
     leadId: body.leadId,
-    badgerCompanyId: body.leadId,
     website: body.website ?? null,
     phone: body.phone ?? null,
   }).returning();

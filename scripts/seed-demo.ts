@@ -406,7 +406,6 @@ async function main() {
 
     const [client] = await db.insert(clients).values({
       leadId: tag,
-      badgerCompanyId: tag,
       name: demo.name,
       website: demo.website,
       phone: demo.phone,

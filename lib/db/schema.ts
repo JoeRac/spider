@@ -39,15 +39,10 @@ export const clients = pgTable('clients', {
   id: uuid('id').primaryKey().defaultRandom(),
 
   /** Fleet-wide canonical lead identifier (= badger.companies.id). Every
-   *  Spider client has one — populated from `badger_company_id` at import
-   *  time, NOT NULL by schema design. Use this when emitting fleet events
-   *  or correlating across apps. */
+   *  Spider client has one, NOT NULL by schema design. Use this when
+   *  emitting fleet events or correlating across apps. Stable across
+   *  re-imports — we upsert on this key. */
   leadId: uuid('lead_id').notNull(),
-
-  /** The Badger company id this client was imported from. Stable across
-   *  re-imports — we upsert on this key. Kept for one rotation of
-   *  backward compat while callers migrate to `lead_id`. */
-  badgerCompanyId: uuid('badger_company_id'),
 
   /** Display name — usually the dealership name from Badger. Editable. */
   name: text('name').notNull(),
@@ -90,7 +85,7 @@ export const clients = pgTable('clients', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  badgerCompanyIdx: uniqueIndex('clients_badger_company_idx').on(t.badgerCompanyId),
+  leadIdx: uniqueIndex('clients_lead_id_idx').on(t.leadId),
   statusIdx: index('clients_status_idx').on(t.status),
 }));
 

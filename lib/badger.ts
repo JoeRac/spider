@@ -16,8 +16,7 @@ import { mintTraceId } from '@/lib/trace';
 
 export type BadgerWonClient = {
   /** Fleet-wide lead id (= badger.companies.id). Spider mirrors this as
-   *  `clients.lead_id` (and, for one rotation of back-compat, also writes
-   *  it to `clients.badger_company_id`).
+   *  `clients.lead_id`.
    *
    *  Wire-name on the Badger side is `companyId` — we expose it as
    *  `leadId` here and remap in `fetchBadgerWonClients`. */
