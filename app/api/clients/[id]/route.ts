@@ -8,9 +8,9 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 /* Fields owned by Badger (the lead-facts source of truth). Every Spider
- * client is bound to a Badger company by schema design (badgerCompanyId
- * is NOT NULL), so we always strip these from PATCH bodies — edits to
- * lead facts must happen in Badger and sync back. */
+ * client is bound to a lead by schema design (lead_id is NOT NULL), so
+ * we always strip these from PATCH bodies — edits to lead facts must
+ * happen in Badger and sync back. */
 const BADGER_OWNED_FIELDS = [
   'name', 'website', 'phone', 'email',
   'addressStreet', 'addressCity', 'addressState', 'addressPostcode', 'addressCountry',

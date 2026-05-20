@@ -15,10 +15,13 @@ import { config } from '@/lib/config';
 import { mintTraceId } from '@/lib/trace';
 
 export type BadgerWonClient = {
-  /** Badger company id — Spider stores this as `clients.badger_company_id`. */
-  companyId: string;
-  /** Badger opportunity id (the deal that closed-as-won). */
-  opportunityId: string;
+  /** Fleet-wide lead id (= badger.companies.id). Spider mirrors this as
+   *  `clients.lead_id` (and, for one rotation of back-compat, also writes
+   *  it to `clients.badger_company_id`).
+   *
+   *  Wire-name on the Badger side is `companyId` — we expose it as
+   *  `leadId` here and remap in `fetchBadgerWonClients`. */
+  leadId: string;
 
   name: string;
   website: string | null;
@@ -32,7 +35,7 @@ export type BadgerWonClient = {
 
   /** Stage label (will be the human label for the won stage). */
   stageLabel: string;
-  /** When the opp first moved into the won stage. */
+  /** When the lead first moved into the won stage. */
   wonAt: string | null;
   /** Dollar value, optional. */
   dealValue: number | null;
@@ -59,6 +62,7 @@ export async function fetchBadgerWonClients(): Promise<BadgerWonClient[]> {
     throw new Error(`Badger ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  const body = await res.json() as { clients?: BadgerWonClient[] };
-  return body.clients ?? [];
+  type WireClient = Omit<BadgerWonClient, 'leadId'> & { companyId: string };
+  const body = await res.json() as { clients?: WireClient[] };
+  return (body.clients ?? []).map(({ companyId, ...rest }) => ({ leadId: companyId, ...rest }));
 }

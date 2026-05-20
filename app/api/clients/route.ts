@@ -1,7 +1,8 @@
 /**
  * GET /api/clients         — list clients (optionally filter by status / search)
  * POST /api/clients        — manually create a client (rare; usually they
- *                            arrive via the Badger import).
+ *                            arrive via the Badger import). Body shape:
+ *                            { name, leadId, website?, phone? }.
  */
 import { type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
@@ -41,18 +42,18 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await readJson<{
     name: string;
-    badgerCompanyId: string;
+    leadId: string;
     website?: string;
     phone?: string;
   }>(req);
   if (body instanceof Response) return body;
   if (!body?.name) return err(400, 'name required');
-  if (!body?.badgerCompanyId) return err(400, 'badgerCompanyId required');
+  if (!body?.leadId) return err(400, 'leadId required');
 
   const [row] = await db.insert(clients).values({
     name: body.name,
-    leadId: body.badgerCompanyId,
-    badgerCompanyId: body.badgerCompanyId,
+    leadId: body.leadId,
+    badgerCompanyId: body.leadId,
     website: body.website ?? null,
     phone: body.phone ?? null,
   }).returning();

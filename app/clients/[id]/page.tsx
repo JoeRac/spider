@@ -222,9 +222,9 @@ async function OverviewTab({ clientId, client, integrationRows }: {
           <CardHeader
             title="Profile"
             subtitle="Lead facts come from Badger — edit them there and changes sync back."
-            action={badgerEditUrlFor(client.badgerCompanyId) && (
+            action={badgerEditUrlFor(client.leadId) && (
               <a
-                href={badgerEditUrlFor(client.badgerCompanyId)!}
+                href={badgerEditUrlFor(client.leadId)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:text-accent-strong"
@@ -489,11 +489,12 @@ function asString(v: string | string[] | undefined): string | null {
   return null;
 }
 
-function badgerEditUrlFor(badgerCompanyId: string | null): string | null {
-  if (!badgerCompanyId) return null;
+function badgerEditUrlFor(leadId: string | null): string | null {
+  if (!leadId) return null;
   const base = process.env.NEXT_PUBLIC_BADGER_BASE_URL;
   if (!base) return null;
-  return `${base.replace(/\/+$/, '')}/companies/${badgerCompanyId}`;
+  // /companies/:id is Badger's URL scheme — leave that path as-is.
+  return `${base.replace(/\/+$/, '')}/companies/${leadId}`;
 }
 
 function eqAnd<A, B>(colA: A, valA: unknown, colB: B, valB: unknown) {

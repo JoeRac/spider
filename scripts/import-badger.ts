@@ -14,18 +14,18 @@ async function main() {
   console.log(`▸ ${won.length} won clients from Badger`);
   if (!won.length) return;
 
-  const ids = won.map((c) => c.companyId);
+  const ids = won.map((c) => c.leadId);
   const existing = await db
-    .select({ id: clients.id, badgerCompanyId: clients.badgerCompanyId })
+    .select({ id: clients.id, leadId: clients.leadId })
     .from(clients)
-    .where(inArray(clients.badgerCompanyId, ids));
-  const existingByBadgerId = new Map(existing.map((r) => [r.badgerCompanyId, r.id]));
+    .where(inArray(clients.leadId, ids));
+  const existingByLeadId = new Map(existing.map((r) => [r.leadId, r.id]));
 
   let imported = 0;
   let updated = 0;
 
   for (const c of won) {
-    const existingId = existingByBadgerId.get(c.companyId);
+    const existingId = existingByLeadId.get(c.leadId);
     if (existingId) {
       await db.update(clients).set({
         name: c.name,
@@ -42,8 +42,8 @@ async function main() {
       updated += 1;
     } else {
       const [row] = await db.insert(clients).values({
-        leadId: c.companyId,
-        badgerCompanyId: c.companyId,
+        leadId: c.leadId,
+        badgerCompanyId: c.leadId,
         name: c.name,
         website: c.website,
         phone: c.phone,
@@ -61,7 +61,7 @@ async function main() {
           actor: 'cli',
           targetType: 'client',
           targetId: row.id,
-          payload: { leadId: c.companyId, badgerCompanyId: c.companyId },
+          payload: { leadId: c.leadId },
         });
       }
     }

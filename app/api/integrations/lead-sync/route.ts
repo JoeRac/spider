@@ -2,10 +2,10 @@
  * POST /api/integrations/lead-sync
  *
  * Receiver for Badger → Spider lead-fact replication. Spider mirrors
- * Badger.companies as `clients` (one row per won dealership). Every
- * Spider client is bound to a Badger company by schema design
- * (`badger_company_id` is NOT NULL), so this endpoint always has a
- * mirror to update when one exists.
+ * the source-of-truth lead record as `clients` (one row per won
+ * dealership). Every Spider client is bound to a lead by schema design
+ * (`lead_id` is NOT NULL), so this endpoint always has a mirror to
+ * update when one exists.
  *
  * What gets synced: name, website, phone, email (always null in the
  * Badger source today — Spider keeps email locally-editable), and the
@@ -15,6 +15,9 @@
  *
  * Stale-check via `badgerLastSyncAt`. Auth: requireIntegrationAuth
  * (SPIDER_API_KEY bearer).
+ *
+ * Wire field: accepts either `leadId` (canonical) or `badgerCompanyId`
+ * (legacy) — Badger is mid-rollout of the rename.
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
@@ -27,7 +30,9 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 type Payload = {
-  badgerCompanyId: string;
+  leadId?: string;
+  /** Legacy alias — kept while Badger transitions wire field. */
+  badgerCompanyId?: string;
   name: string;
   phone: string | null;
   website: string | null;
@@ -52,14 +57,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
 
-  if (!body || typeof body.badgerCompanyId !== 'string' || body.badgerCompanyId.length === 0) {
-    return NextResponse.json({ error: 'badgerCompanyId required' }, { status: 400 });
+  const leadId = body?.leadId ?? body?.badgerCompanyId;
+  if (!leadId || typeof leadId !== 'string' || leadId.length === 0) {
+    return NextResponse.json({ error: 'leadId required' }, { status: 400 });
   }
   if (!body.updatedAt || Number.isNaN(Date.parse(body.updatedAt))) {
     return NextResponse.json({ error: 'updatedAt must be an ISO timestamp' }, { status: 400 });
   }
 
-  const rows = await db.select().from(clients).where(eq(clients.badgerCompanyId, body.badgerCompanyId));
+  const rows = await db.select().from(clients).where(eq(clients.leadId, leadId));
   if (rows.length === 0) {
     return NextResponse.json({ accepted: true, matched: 0, reason: 'no Spider mirror' });
   }

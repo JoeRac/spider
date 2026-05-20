@@ -395,9 +395,8 @@ async function main() {
     console.log(`  removed ${previousDemo.length} prior demo client(s) (cascades wiped children)`);
   }
 
-  // Pre-compute a stable badger_company_id namespace per demo client so
-  // re-running outside this script (e.g. importing real Badger data) won't
-  // conflict.
+  // Pre-compute a stable lead_id namespace per demo client so re-running
+  // outside this script (e.g. importing real Badger data) won't conflict.
   const namespace = '00000000-dead-beef-cafe';
 
   for (let i = 0; i < DEMO.length; i++) {
