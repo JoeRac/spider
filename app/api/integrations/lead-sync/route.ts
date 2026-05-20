@@ -16,8 +16,7 @@
  * Stale-check via `badgerLastSyncAt`. Auth: requireIntegrationAuth
  * (SPIDER_API_KEY bearer).
  *
- * Wire field: accepts either `leadId` (canonical) or `badgerCompanyId`
- * (legacy) — Badger is mid-rollout of the rename.
+ * Wire field: `leadId` (canonical, fleet-wide lead identifier).
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
@@ -31,8 +30,6 @@ export const runtime = 'nodejs';
 
 type Payload = {
   leadId?: string;
-  /** Legacy alias — kept while Badger transitions wire field. */
-  badgerCompanyId?: string;
   name: string;
   phone: string | null;
   website: string | null;
@@ -57,7 +54,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
 
-  const leadId = body?.leadId ?? body?.badgerCompanyId;
+  const leadId = body?.leadId;
   if (!leadId || typeof leadId !== 'string' || leadId.length === 0) {
     return NextResponse.json({ error: 'leadId required' }, { status: 400 });
   }

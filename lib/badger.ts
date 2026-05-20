@@ -15,11 +15,7 @@ import { config } from '@/lib/config';
 import { mintTraceId } from '@/lib/trace';
 
 export type BadgerWonClient = {
-  /** Fleet-wide lead id (= badger.companies.id). Spider mirrors this as
-   *  `clients.lead_id`.
-   *
-   *  Wire-name on the Badger side is `companyId` — we expose it as
-   *  `leadId` here and remap in `fetchBadgerWonClients`. */
+  /** Fleet-wide lead id. Spider mirrors this as `clients.lead_id`. */
   leadId: string;
 
   name: string;
@@ -61,7 +57,6 @@ export async function fetchBadgerWonClients(): Promise<BadgerWonClient[]> {
     throw new Error(`Badger ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  type WireClient = Omit<BadgerWonClient, 'leadId'> & { companyId: string };
-  const body = await res.json() as { clients?: WireClient[] };
-  return (body.clients ?? []).map(({ companyId, ...rest }) => ({ leadId: companyId, ...rest }));
+  const body = await res.json() as { clients?: BadgerWonClient[] };
+  return body.clients ?? [];
 }
