@@ -51,7 +51,6 @@ export async function POST(_req: NextRequest) {
       // Refresh snapshot fields only — don't trample operator edits to
       // status/description/settings.
       await db.update(clients).set({
-        badgerOpportunityId: c.opportunityId,
         name: c.name,
         website: c.website,
         phone: c.phone,
@@ -66,8 +65,8 @@ export async function POST(_req: NextRequest) {
       updated += 1;
     } else {
       const [row] = await db.insert(clients).values({
+        leadId: c.companyId,
         badgerCompanyId: c.companyId,
-        badgerOpportunityId: c.opportunityId,
         name: c.name,
         website: c.website,
         phone: c.phone,
@@ -86,8 +85,8 @@ export async function POST(_req: NextRequest) {
           targetType: 'client',
           targetId: row.id,
           payload: {
+            leadId: c.companyId,
             badgerCompanyId: c.companyId,
-            badgerOpportunityId: c.opportunityId,
             dealValue: c.dealValue,
           },
         });

@@ -406,6 +406,7 @@ async function main() {
     console.log(`▸ seeding ${demo.name}…`);
 
     const [client] = await db.insert(clients).values({
+      leadId: tag,
       badgerCompanyId: tag,
       name: demo.name,
       website: demo.website,

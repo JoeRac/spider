@@ -38,13 +38,16 @@ import { sql } from 'drizzle-orm';
 export const clients = pgTable('clients', {
   id: uuid('id').primaryKey().defaultRandom(),
 
-  /** The Badger company id this client was imported from. Stable across
-   *  re-imports — we upsert on this key. */
-  badgerCompanyId: uuid('badger_company_id').notNull(),
+  /** Fleet-wide canonical lead identifier (= badger.companies.id). Every
+   *  Spider client has one — populated from `badger_company_id` at import
+   *  time, NOT NULL by schema design. Use this when emitting fleet events
+   *  or correlating across apps. */
+  leadId: uuid('lead_id').notNull(),
 
-  /** Optional Badger opportunity id (the deal that closed-as-won). Kept for
-   *  drill-down; null if the client was created manually. */
-  badgerOpportunityId: uuid('badger_opportunity_id'),
+  /** The Badger company id this client was imported from. Stable across
+   *  re-imports — we upsert on this key. Kept for one rotation of
+   *  backward compat while callers migrate to `lead_id`. */
+  badgerCompanyId: uuid('badger_company_id'),
 
   /** Display name — usually the dealership name from Badger. Editable. */
   name: text('name').notNull(),

@@ -66,8 +66,8 @@ export async function silverbackEnqueue(event: SilverbackEvent): Promise<void> {
 }
 
 /**
- * Convenience wrapper: look up the Spider client to pull
- * badger_company_id + phone, then enqueue.
+ * Convenience wrapper: look up the Spider client to pull the canonical
+ * lead_id + phone, then enqueue.
  */
 export async function silverbackEnqueueForClient(
   clientId: string,
@@ -79,14 +79,13 @@ export async function silverbackEnqueueForClient(
     id: clients.id,
     name: clients.name,
     phone: clients.phone,
-    badgerCompanyId: clients.badgerCompanyId,
+    leadId: clients.leadId,
   }).from(clients).where(eq(clients.id, clientId)).limit(1);
 
   const altKeys: Record<string, string> = { ...(event.alt_keys ?? {}), spider_client: clientId };
-  if (client?.badgerCompanyId) altKeys.badger_company = client.badgerCompanyId;
 
   await silverbackEnqueue({
-    lead_id: client?.badgerCompanyId ?? null,
+    lead_id: client?.leadId ?? null,
     spider_client_id: clientId,
     hint_phone: client?.phone ?? null,
     alt_keys: altKeys,

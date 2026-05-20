@@ -28,7 +28,6 @@ async function main() {
     const existingId = existingByBadgerId.get(c.companyId);
     if (existingId) {
       await db.update(clients).set({
-        badgerOpportunityId: c.opportunityId,
         name: c.name,
         website: c.website,
         phone: c.phone,
@@ -43,8 +42,8 @@ async function main() {
       updated += 1;
     } else {
       const [row] = await db.insert(clients).values({
+        leadId: c.companyId,
         badgerCompanyId: c.companyId,
-        badgerOpportunityId: c.opportunityId,
         name: c.name,
         website: c.website,
         phone: c.phone,
@@ -62,7 +61,7 @@ async function main() {
           actor: 'cli',
           targetType: 'client',
           targetId: row.id,
-          payload: { badgerCompanyId: c.companyId, opportunityId: c.opportunityId },
+          payload: { leadId: c.companyId, badgerCompanyId: c.companyId },
         });
       }
     }
