@@ -493,8 +493,9 @@ function badgerEditUrlFor(leadId: string | null): string | null {
   if (!leadId) return null;
   const base = process.env.NEXT_PUBLIC_BADGER_BASE_URL;
   if (!base) return null;
-  // /companies/:id is Badger's URL scheme — leave that path as-is.
-  return `${base.replace(/\/+$/, '')}/companies/${leadId}`;
+  // Badger's URL scheme is /leads/:id (renamed from /companies — see
+  // badger commit b4c0776). The legacy /companies path 404s.
+  return `${base.replace(/\/+$/, '')}/leads/${leadId}`;
 }
 
 function eqAnd<A, B>(colA: A, valA: unknown, colB: B, valB: unknown) {
