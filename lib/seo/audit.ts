@@ -13,6 +13,7 @@
 import { db } from '@/lib/db';
 import { seoAudits, seoProfiles } from '@/lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
+import { assertSafeHttpUrl } from '@/lib/security/safe-url';
 
 type Severity = 'info' | 'warn' | 'fail';
 
@@ -47,6 +48,8 @@ export async function runAudit(clientId: string, url: string): Promise<AuditResu
   let findings: Finding[] = [];
 
   try {
+    // SSRF guard: reject private / loopback / link-local / metadata targets.
+    assertSafeHttpUrl(url);
     const res = await fetch(url, {
       headers: { 'user-agent': 'SpiderSEOAudit/1.0 (+https://spider-ruddy.vercel.app)' },
       signal: AbortSignal.timeout(20_000),

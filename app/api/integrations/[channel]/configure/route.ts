@@ -17,6 +17,7 @@ import { ok, err, readJson } from '@/lib/api-helpers';
 import { upsertConnectedIntegration } from '@/lib/integration-store';
 import { getAdapter } from '@/lib/channels/registry';
 import { CHANNELS, type Channel } from '@/lib/db/schema';
+import { isSafeHttpUrl } from '@/lib/security/safe-url';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,11 +53,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ cha
       if (!wp?.baseUrl || !wp.username || !wp.applicationPassword) {
         return err(400, 'wordpress requires baseUrl, username, applicationPassword');
       }
+      // SSRF guard: reject private / loopback / link-local / metadata targets at save time.
+      if (!isSafeHttpUrl(wp.baseUrl)) {
+        return err(400, 'wordpress baseUrl must be a public http/https URL');
+      }
       credentials = { mode: 'wordpress', ...wp };
       externalIds = { base_url: wp.baseUrl };
     } else {
       const wh = body.webhook;
       if (!wh?.url) return err(400, 'webhook requires url');
+      // SSRF guard: reject private / loopback / link-local / metadata targets at save time.
+      if (!isSafeHttpUrl(wh.url)) {
+        return err(400, 'webhook url must be a public http/https URL');
+      }
       credentials = { mode: 'webhook', ...wh };
       externalIds = { webhook_url: wh.url };
     }

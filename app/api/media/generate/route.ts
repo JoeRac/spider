@@ -14,6 +14,7 @@ import { putBlob, pathFor } from '@/lib/blob';
 import { db } from '@/lib/db';
 import { contentItems } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { isSafeHttpUrl } from '@/lib/security/safe-url';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -61,6 +62,10 @@ export async function POST(req: NextRequest) {
   let buf: Buffer;
   let contentType = 'image/png';
   if (first.url) {
+    // SSRF guard: AI model may return attacker-influenced URLs; block private targets.
+    if (!isSafeHttpUrl(first.url)) {
+      return err(502, 'Generated image URL rejected by SSRF guard');
+    }
     const fetched = await fetch(first.url);
     if (!fetched.ok) return err(502, `Failed to fetch generated image: ${fetched.status}`);
     contentType = fetched.headers.get('content-type') ?? contentType;

@@ -10,6 +10,7 @@
  */
 import { db } from '@/lib/db';
 import { seoSitemaps } from '@/lib/db/schema';
+import { assertSafeHttpUrl } from '@/lib/security/safe-url';
 
 export type SitemapSnapshot = {
   url: string;
@@ -24,6 +25,13 @@ const MAX_URLS_VISITED = 50;
 const FETCH_TIMEOUT_MS = 15_000;
 
 export async function fetchSitemap(rootUrl: string): Promise<SitemapSnapshot> {
+  // SSRF guard: reject private / loopback / link-local / metadata targets.
+  try {
+    assertSafeHttpUrl(rootUrl);
+  } catch (e) {
+    return { url: rootUrl, urlCount: 0, lastmodAt: null, status: 'failed', error: e instanceof Error ? e.message : 'URL rejected' };
+  }
+
   const sitemapUrl = await resolveSitemapUrl(rootUrl);
   if (!sitemapUrl) {
     return { url: rootUrl, urlCount: 0, lastmodAt: null, status: 'failed', error: 'No sitemap found at /sitemap.xml or in robots.txt' };
@@ -96,6 +104,7 @@ export async function runSitemapForClient(clientId: string, rootUrl: string) {
 
 async function resolveSitemapUrl(rootUrl: string): Promise<string | null> {
   const candidate = new URL('/sitemap.xml', rootUrl).toString();
+  // assertSafeHttpUrl already called on rootUrl in fetchSitemap; candidate shares the same host.
   const head = await fetch(candidate, { method: 'HEAD', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).catch(() => null);
   if (head?.ok) return candidate;
 
@@ -108,6 +117,8 @@ async function resolveSitemapUrl(rootUrl: string): Promise<string | null> {
 
 async function fetchText(url: string): Promise<string | null> {
   try {
+    // SSRF guard: also covers child URLs resolved from sitemapindex documents.
+    assertSafeHttpUrl(url);
     const res = await fetch(url, {
       headers: { 'user-agent': 'SpiderSEOBot/1.0' },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),

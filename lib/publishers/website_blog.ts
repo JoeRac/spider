@@ -8,6 +8,7 @@
  */
 import type { ChannelPublisher, PublishContext, PublishResult } from './types';
 import { createHmac } from 'node:crypto';
+import { assertSafeHttpUrl } from '@/lib/security/safe-url';
 
 export const websiteBlogPublisher: ChannelPublisher = {
   channel: 'website_blog',
@@ -24,6 +25,9 @@ async function publishWordPress(ctx: PublishContext): Promise<PublishResult> {
   const username = ctx.credentials.username as string | undefined;
   const password = ctx.credentials.applicationPassword as string | undefined;
   if (!baseUrl || !username || !password) throw new Error('WordPress mode missing baseUrl / username / applicationPassword');
+
+  // SSRF guard: reject private / loopback / link-local / metadata targets.
+  assertSafeHttpUrl(baseUrl);
 
   const auth = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   const res = await fetch(`${baseUrl}/wp-json/wp/v2/posts`, {
@@ -47,6 +51,9 @@ async function publishWebhook(ctx: PublishContext): Promise<PublishResult> {
   const url = ctx.credentials.url as string | undefined;
   const secret = ctx.credentials.secret as string | undefined;
   if (!url) throw new Error('Webhook mode missing url');
+
+  // SSRF guard: reject private / loopback / link-local / metadata targets.
+  assertSafeHttpUrl(url);
 
   const payload = JSON.stringify({
     id: ctx.item.id,
