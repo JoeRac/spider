@@ -22,7 +22,7 @@ const HTTP_TIMEOUT_MS = 8_000;
 
 function authorizeCron(req: NextRequest): boolean {
   const required = process.env.CRON_SECRET;
-  if (!required) return true;
+  if (!required) return false;
   const auth = req.headers.get('authorization') ?? '';
   return auth === `Bearer ${required}` || req.headers.get('x-cron-secret') === required;
 }

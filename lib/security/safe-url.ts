@@ -10,6 +10,9 @@
 /** Ranges and hostnames that must never be fetched. */
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
+  'ip6-localhost',
+  'ip6-loopback',
+  '0.0.0.0',
   'metadata.google.internal',
 ]);
 
@@ -41,6 +44,9 @@ export function isSafeHttpUrl(rawUrl: string): boolean {
   // Block by exact hostname.
   if (BLOCKED_HOSTNAMES.has(host)) return false;
 
+  // *.localhost subdomains also resolve to loopback.
+  if (host.endsWith('.localhost')) return false;
+
   // IPv6 loopback: [::1]
   if (host === '::1' || host === '[::1]') return false;
 
@@ -54,16 +60,22 @@ export function isSafeHttpUrl(rawUrl: string): boolean {
   const octets = bare.split('.');
   if (octets.length === 4 && octets.every(o => /^\d+$/.test(o))) {
     const [a, b] = octets.map(Number) as [number, number, number, number];
-    // 127.0.0.0/8 — loopback
-    if (a === 127) return false;
+    // 0.0.0.0/8 — "this network"
+    if (a === 0) return false;
     // 10.0.0.0/8 — private
     if (a === 10) return false;
+    // 100.64.0.0/10 — CGNAT shared address space
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    // 127.0.0.0/8 — loopback
+    if (a === 127) return false;
+    // 169.254.0.0/16 — link-local / metadata (incl. 169.254.169.254)
+    if (a === 169 && b === 254) return false;
     // 172.16.0.0/12 — private
     if (a === 172 && b >= 16 && b <= 31) return false;
     // 192.168.0.0/16 — private
     if (a === 192 && b === 168) return false;
-    // 169.254.0.0/16 — link-local / metadata (incl. 169.254.169.254)
-    if (a === 169 && b === 254) return false;
+    // 224.0.0.0/4 and above — multicast and reserved
+    if (a >= 224) return false;
   }
 
   return true;
