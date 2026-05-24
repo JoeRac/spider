@@ -8,11 +8,14 @@ import { clients } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { ok, err, readJson } from '@/lib/api-helpers';
 import { voiceFromClientSettings, updateVoice, voiceSchema } from '@/lib/content/voice';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const { id } = await params;
   const [row] = await db.select({ settings: clients.settings }).from(clients).where(eq(clients.id, id)).limit(1);
   if (!row) return err(404, 'Client not found');
@@ -20,6 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session2 = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session2) return err(401, 'Operator session required.');
   const { id } = await params;
   const body = await readJson<unknown>(req);
   if (body instanceof Response) return body;

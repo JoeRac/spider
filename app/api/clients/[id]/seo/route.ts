@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { ok, err, readJson } from '@/lib/api-helpers';
 import { latestAudit, getProfile } from '@/lib/seo/audit';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -22,7 +23,9 @@ const profileSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const { id } = await params;
   const profile = await getProfile(id);
   const audit = await latestAudit(id);
@@ -30,6 +33,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session2 = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session2) return err(401, 'Operator session required.');
   const { id } = await params;
   const body = await readJson<unknown>(req);
   if (body instanceof Response) return body;

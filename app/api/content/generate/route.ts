@@ -6,6 +6,7 @@ import { type NextRequest } from 'next/server';
 import { ok, err, readJson } from '@/lib/api-helpers';
 import { runGeneration } from '@/lib/content/generate';
 import { CONTENT_KINDS, type ContentKind } from '@/lib/content/templates';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -21,6 +22,8 @@ type Body = {
 };
 
 export async function POST(req: NextRequest) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const body = await readJson<Body>(req);
   if (body instanceof Response) return body;
   if (!body?.clientId) return err(400, 'clientId required');

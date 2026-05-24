@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { clients, integrations } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { ok, err, readJson } from '@/lib/api-helpers';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,7 +17,9 @@ const BADGER_OWNED_FIELDS = [
   'addressStreet', 'addressCity', 'addressState', 'addressPostcode', 'addressCountry',
 ] as const;
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const { id } = await params;
   const [row] = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
   if (!row) return err(404, 'Client not found');
@@ -25,6 +28,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session2 = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session2) return err(401, 'Operator session required.');
   const { id } = await params;
   const body = await readJson<Partial<{
     name: string;

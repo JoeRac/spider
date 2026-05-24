@@ -15,7 +15,8 @@ import { type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { clients, contentItems } from '@/lib/db/schema';
 import { ilike, or, desc } from 'drizzle-orm';
-import { ok } from '@/lib/api-helpers';
+import { ok, err } from '@/lib/api-helpers';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -23,6 +24,8 @@ export const runtime = 'nodejs';
 const MAX_PER_SECTION = 8;
 
 export async function GET(req: NextRequest) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const q = (req.nextUrl.searchParams.get('q') ?? '').trim();
   if (!q) return ok({ clients: [], content: [] });
 

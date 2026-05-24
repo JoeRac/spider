@@ -11,6 +11,7 @@ import { putBlob, pathFor } from '@/lib/blob';
 import { db } from '@/lib/db';
 import { contentItems } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,6 +20,8 @@ export const maxDuration = 60;
 const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
 
 export async function POST(req: NextRequest) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const form = await req.formData().catch(() => null);
   if (!form) return err(400, 'multipart/form-data required');
   const file = form.get('file');

@@ -2,12 +2,15 @@ import { type NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { contentItems, clients } from '@/lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
-import { ok } from '@/lib/api-helpers';
+import { ok, err } from '@/lib/api-helpers';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const url = req.nextUrl;
   const clientId = url.searchParams.get('clientId') ?? undefined;
   const status = url.searchParams.get('status') ?? undefined;

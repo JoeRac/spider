@@ -10,11 +10,14 @@ import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { ok, err, readJson } from '@/lib/api-helpers';
 import { CITATION_DIRECTORIES, getDirectory } from '@/lib/seo/citations';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const { id } = await params;
   const rows = await db.select().from(seoCitations).where(eq(seoCitations.clientId, id));
   const byKey = new Map(rows.map((r) => [r.directoryKey, r]));
@@ -39,6 +42,8 @@ const putSchema = z.object({
 });
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session2 = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session2) return err(401, 'Operator session required.');
   const { id } = await params;
   const body = await readJson<z.infer<typeof putSchema>>(req);
   if (body instanceof Response) return body;

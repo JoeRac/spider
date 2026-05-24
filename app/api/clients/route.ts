@@ -9,11 +9,14 @@ import { db } from '@/lib/db';
 import { clients } from '@/lib/db/schema';
 import { and, desc, eq, ilike, or } from 'drizzle-orm';
 import { ok, err, readJson } from '@/lib/api-helpers';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const url = req.nextUrl;
   const status = url.searchParams.get('status') ?? undefined;
   const search = (url.searchParams.get('search') ?? '').trim();
@@ -40,6 +43,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const session2 = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session2) return err(401, 'Operator session required.');
   const body = await readJson<{
     name: string;
     leadId: string;

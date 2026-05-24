@@ -15,6 +15,7 @@ import { db } from '@/lib/db';
 import { contentItems } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { isSafeHttpUrl } from '@/lib/security/safe-url';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -31,6 +32,8 @@ type Body = {
 const DEFAULT_IMAGE_MODEL = process.env.ZAI_IMAGE_MODEL ?? 'cogview-3-plus';
 
 export async function POST(req: NextRequest) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const body = await readJson<Body>(req);
   if (body instanceof Response) return body;
   if (!body?.clientId) return err(400, 'clientId required');
