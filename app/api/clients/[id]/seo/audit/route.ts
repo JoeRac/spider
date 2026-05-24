@@ -8,12 +8,15 @@ import { runAudit, getProfile } from '@/lib/seo/audit';
 import { db } from '@/lib/db';
 import { clients } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const { id } = await params;
   const body = (await readJson<{ url?: string }>(req).catch(() => ({}))) as { url?: string };
   let url = body?.url;

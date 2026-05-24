@@ -13,12 +13,15 @@
 import { type NextRequest } from 'next/server';
 import { runAutopilotTickForClient } from '@/lib/content/autopilot-run';
 import { ok, err } from '@/lib/api-helpers';
+import { verifySession, FLEET_SESSION_COOKIE } from '@/lib/fleet-session';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await verifySession(req.cookies.get(FLEET_SESSION_COOKIE)?.value);
+  if (!session) return err(401, 'Operator session required.');
   const { id } = await params;
   const result = await runAutopilotTickForClient(id);
   if (result.status === 'not-found') return err(404, 'Client not found');
